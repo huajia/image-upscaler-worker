@@ -1,26 +1,46 @@
 /* 
  =========================================================================
- == upscaler-worker.js (V3 - 增强初始化和错误报告)
+ == upscaler-worker.js (V5 - 最终版，适配跨域隔离环境)
  =========================================================================
 */
 console.log('[WORKER] ONNX.js Worker 脚本启动');
 
+// 【新增】检查当前是否处于跨域隔离状态
+// self.crossOriginIsolated 在 Worker 中可以直接访问
+console.log(`[WORKER] 环境状态: crossOriginIsolated = ${self.crossOriginIsolated}`);
+if (!self.crossOriginIsolated) {
+    console.warn('[WORKER] 警告: 当前环境未开启跨域隔离 (cross-origin isolation)。多线程和高内存模式将不可用，可能导致复杂模型运行失败。');
+    // 可以在这里向主线程发送一个警告
+    self.postMessage({ type: 'status', payload: { message: '警告: 环境未隔离，性能受限' } });
+}
+
 try {
-    // 【修改】从CDN导入ONNX.js库
     self.importScripts("https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/ort.min.js");
 
-    // 【修改】设置WASM文件所在的目录路径
     ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/";
     
-    // 【新增】初始化成功后，立刻向主线程报告
+    // 只有在隔离环境下才启用多线程，否则让ONNX自动回退
+    if (self.crossOriginIsolated) {
+        ort.env.wasm.numThreads = navigator.hardwareConcurrency || 4;
+        console.log(`[WORKER] 已启用多线程，线程数: ${ort.env.wasm.numThreads}`);
+    } else {
+        console.log('[WORKER] 未启用多线程。');
+    }
+
+    // 内存限制依然设置，它在单线程下也有帮助，但在隔离环境下效果最好
+    ort.env.wasm.memoryLimit = 512 * 1024 * 1024; 
+    console.log(`[WORKER] ONNX WASM memory limit set to ${ort.env.wasm.memoryLimit / 1024 / 1024} MB`);
+    
     self.postMessage({ type: 'status', payload: { message: 'AI环境初始化成功，等待任务...' } });
 
 } catch (e) {
-    console.error('[WORKER] 导入ONNX脚本失败:', e);
-    // 【新增】如果脚本导入失败，发送致命错误
-    self.postMessage({ type: 'error', payload: { message: '无法加载ONNX.js核心库，请检查网络连接或浏览器插件。', stack: e.stack } });
+    console.error('[WORKER] 导入或配置ONNX脚本失败:', e);
+    self.postMessage({ type: 'error', payload: { message: '无法加载或配置ONNX.js核心库。', stack: e.stack } });
 }
 
+
+// --- 后续所有代码 (modelCache, onmessage, createImageDataFromFile, loadModel 等) 保持不变 ---
+// --- 您可以继续使用上一个版本 (V4) 的那部分代码，无需修改 ---
 
 let modelCache = {};
 
@@ -54,7 +74,6 @@ async function createImageDataFromFile(file) {
     return ctx.getImageData(0, 0, width, height);
 }
 
-// 【重写】模型加载函数，增加清晰的错误处理
 async function loadModel(modelPath) {
     if (modelCache[modelPath]) {
         return modelCache[modelPath];
@@ -66,40 +85,15 @@ async function loadModel(modelPath) {
     try {
         const response = await fetch(modelPath); 
         
-        // 【关键】检查网络请求是否成功 (例如 404 Not Found)
         if (!response.ok) {
-            throw new Error(`模型文件加载失败: ${response.status} ${response.statusText}。请检查路径 '${modelPath}' 是否正确并且文件存在。`);
+            throw new Error(`模型文件加载失败: ${response.status} ${response.statusText}。请检查路径 '${modelPath}' 是否正确。`);
         }
 
-        const contentLength = response.headers.get('content-length');
-        const totalSize = contentLength ? parseInt(contentLength, 10) : 0;
-        let loadedSize = 0;
-
-        const reader = response.body.getReader();
-        const chunks = [];
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            
-            chunks.push(value);
-            loadedSize += value.length;
-            
-            if (totalSize > 0) {
-                const progress = loadedSize / totalSize;
-                self.postMessage({ type: 'download_progress', payload: { progress, file: modelFile } });
-            }
-        }
-
-        const modelBuffer = new Uint8Array(loadedSize);
-        let offset = 0;
-        for (const chunk of chunks) {
-            modelBuffer.set(chunk, offset);
-            offset += chunk.length;
-        }
-
+        const modelBuffer = await response.arrayBuffer();
+        
         self.postMessage({ type: 'status', payload: { message: `正在创建AI会话...` } });
         
-        const session = await ort.InferenceSession.create(modelBuffer.buffer, {
+        const session = await ort.InferenceSession.create(modelBuffer, {
             executionProviders: ['wasm'],
             graphOptimizationLevel: 'all'
         });
@@ -108,7 +102,6 @@ async function loadModel(modelPath) {
         return session;
     } catch (e) {
         console.error(`[WORKER] 加载模型时出错 ${modelPath}:`, e);
-        // 将捕获到的清晰错误向上抛出
         throw e;
     }
 }
@@ -141,8 +134,6 @@ async function upscaleImage(imageData, config) {
 
     return float32ToImageData(currentTensorData, currentWidth, currentHeight);
 }
-
-// --- 其他辅助函数 (无改动) ---
 async function processWithModel(inputData, width, height, model, patchSize, scale, taskName) {
     const outputWidth = width * scale;
     const outputHeight = height * scale;
@@ -169,7 +160,9 @@ async function processWithModel(inputData, width, height, model, patchSize, scal
             const progress = processedTiles / totalTiles;
             const elapsed = (performance.now() - startTime) / 1000;
             const eta = progress > 0.01 ? (elapsed / progress) * (1 - progress) : 0;
-            self.postMessage({ type: 'progress', payload: { progress, eta, task: taskName } });
+            if (processedTiles % 5 === 0 || progress === 1) { 
+                self.postMessage({ type: 'progress', payload: { progress, eta, task: taskName } });
+            }
         }
     }
     return { outputData, outputWidth, outputHeight };
