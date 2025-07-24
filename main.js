@@ -1,7 +1,7 @@
 document.addEventListener('DOMContentLoaded', () => {
     console.log("AI Upscaler Studio (ONNX Version) Loaded");
 
-    // --- DOM元素获取 ---
+    // --- DOM元素获取 (代码无变化) ---
     const fileInput = document.getElementById('fileInput');
     const uploadArea = document.getElementById('uploadArea');
     const statusDiv = document.getElementById('status');
@@ -24,7 +24,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const waifu2xNoise = document.getElementById('waifu2x-noise');
     const waifu2xScale = document.getElementById('waifu2x-scale');
 
-    // --- 全局状态和配置 ---
     const PATCH_SIZES = [16, 32, 48, 64, 96, 128, 192, 256, 384];
     const PATCH_INFO = [
         "极低内存，极慢。用于内存极小的设备。", "非常低内存，非常慢。适合处理超大图片。", "低内存，较慢。", "中低内存，速度尚可。", "默认值。内存与速度的良好平衡。", "中高内存，速度快。推荐。", "高内存，速度很快。", "非常高内存，可能导致浏览器卡顿。", "实验性。极易导致浏览器崩溃。"
@@ -32,19 +31,20 @@ document.addEventListener('DOMContentLoaded', () => {
     let upscalerWorker;
     let originalFile = null;
 
-    // --- 核心功能函数 ---
     function initializeWorker() {
         if (typeof(Worker) === "undefined") {
             alert('抱歉，您的浏览器不支持Web Workers，无法使用此应用。');
-            statusDiv.innerHTML = '<i class="fas fa-times-circle"></i> 初始化失败';
+            statusDiv.innerHTML = '<i class="fas fa-times-circle"></i> 初始化失败: 不支持Web Worker';
             return;
         }
-        statusDiv.innerHTML = '<i class="fas fa-cogs"></i> 正在初始化AI环境...';
+        statusDiv.innerHTML = '<i class="fas fa-cogs"></i> 正在启动AI Worker...';
         upscalerWorker = new Worker('upscaler-worker.js');
         upscalerWorker.onmessage = handleWorkerMessage;
+        
+        // 【修改】增强错误处理，提供更具体的建议
         upscalerWorker.onerror = (e) => {
-             console.error(`Worker error: ${e.message}`, e);
-             statusDiv.innerHTML = `<i class="fas fa-times-circle"></i> Worker遇到严重错误: ${e.message}`;
+             console.error(`Worker 发生严重错误:`, e);
+             statusDiv.innerHTML = `<i class="fas fa-times-circle"></i> Worker错误: ${e.message}. <br><b>请检查浏览器控制台(F12)的'Network'和'Console'选项卡，确认所有脚本和模型文件都已成功加载(状态200)。</b>`;
              enableControls();
         }
     }
@@ -52,10 +52,10 @@ document.addEventListener('DOMContentLoaded', () => {
     function handleWorkerMessage(event) {
         const { type, payload } = event.data;
         switch (type) {
+            // 【修改】现在Worker会发回更详细的状态
             case 'status':
                 statusDiv.innerHTML = `<i class="fas fa-info-circle"></i> ${payload.message}`;
                 break;
-            // 【新增】处理模型下载进度的逻辑
             case 'download_progress':
                 const percentage = Math.round(payload.progress * 100);
                 statusDiv.innerHTML = `<i class="fas fa-cloud-download-alt fa-spin"></i> 正在下载模型 (${payload.file}): ${percentage}%`;
@@ -67,42 +67,37 @@ document.addEventListener('DOMContentLoaded', () => {
                 renderUpscaledImage(payload);
                 break;
             case 'error':
-                // 现在 payload.message 会有正确的错误信息
                 console.error("Worker Error:", payload);
-                statusDiv.innerHTML = `<i class="fas fa-times-circle"></i> 处理失败: ${payload.message}`;
+                // 【修改】在UI上更清晰地显示错误堆栈信息
+                statusDiv.innerHTML = `<i class="fas fa-times-circle"></i> 处理失败: <span style="font-weight:bold;">${payload.message}</span><br><pre style="opacity:0.7; font-size:12px; margin-top:5px;">${payload.stack}</pre>`;
                 enableControls();
                 break;
         }
     }
 
+    // --- 其他函数 (基本无变化) ---
+    
     async function renderUpscaledImage(imageData) {
         statusDiv.innerHTML = '<i class="fas fa-check-circle"></i> 处理完成！正在渲染图片...';
         await new Promise(resolve => setTimeout(resolve, 50));
-    
         const { width, height, data } = imageData;
         resultInfo.textContent = `${width}×${height} • ${(width * height / 1000000).toFixed(2)} MP`;
-        
         const canvasZoomContainer = document.getElementById('canvasZoomContainer'); 
         canvasZoomContainer.style.width = `${width}px`;
         canvasZoomContainer.style.height = `${height}px`;
-    
         resultCanvas.width = width;
         resultCanvas.height = height;
         resultCanvas.style.width = `${width}px`;
         resultCanvas.style.height = `${height}px`;
-    
         const ctx = resultCanvas.getContext('2d');
         const clampedData = new Uint8ClampedArray(data);
         ctx.putImageData(new ImageData(clampedData, width, height), 0, 0);
-    
         resultContainer.style.display = 'flex';
         previewControls.style.display = 'block';
         downloadBtn.style.display = 'flex';
-        
         zoomSlider.value = 100;
         zoomValue.textContent = '100%';
         resultCanvas.style.transform = 'scale(1)';
-    
         statusDiv.innerHTML = '<i class="fas fa-check-circle"></i> 预览或下载图片';
         enableControls();
     }
@@ -110,7 +105,6 @@ document.addEventListener('DOMContentLoaded', () => {
     function handleImageUpload(file) {
         if (!file) return;
         originalFile = file;
-
         const reader = new FileReader();
         reader.onload = (e) => {
             const imageDataUrl = e.target.result;
@@ -120,14 +114,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 originalInfo.textContent = `${img.width}×${img.height} • ${sizeInMB} MB`;
             };
             img.src = imageDataUrl;
-
             resultContainer.style.display = 'none';
             previewControls.style.display = 'none';
             downloadBtn.style.display = 'none';
-
             originalImageBox.style.display = 'flex';
             originalImage.src = imageDataUrl;
-            
             executeBtn.style.display = 'flex';
             statusDiv.innerHTML = '<i class="fas fa-image"></i> 图片已加载，点击 "执行" 开始处理';
             enableControls();
@@ -141,7 +132,6 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         disableControls();
-        
         const config = {
             patchSize: PATCH_SIZES[patchSizeSlider.valueAsNumber],
             waifu2x: {
@@ -151,7 +141,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 scale: parseInt(waifu2xScale.value, 10),
             }
         };
-
         statusDiv.innerHTML = '<i class="fas fa-paper-plane"></i> 任务已发送，请稍候...';
         upscalerWorker.postMessage({ type: 'start', file: originalFile, config: config });
     }
@@ -166,7 +155,6 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (percentage > 98) {
              etaText = " (即将完成...)";
         }
-        
         const taskText = task ? `[${task}] ` : '';
         statusDiv.innerHTML = `<i class="fas fa-spinner fa-spin"></i> ${taskText}处理中... ${percentage}%${etaText}`;
     }
@@ -189,21 +177,18 @@ document.addEventListener('DOMContentLoaded', () => {
         waifu2xArch.disabled = false;
         patchSizeSlider.disabled = false;
         executeBtn.disabled = false;
-        // Do not clear file input here to allow re-running on the same file
         toggleWaifu2xOptions();
     }
     
     function toggleWaifu2xOptions() {
         const arch = waifu2xArch.value;
         const isCunet = arch === 'cunet';
-        
         waifu2xStyle.disabled = isCunet;
         const styleGroup = waifu2xStyle.closest('.form-group');
         if (styleGroup) {
              styleGroup.style.opacity = isCunet ? 0.5 : 1;
              styleGroup.style.pointerEvents = isCunet ? 'none' : 'auto';
         }
-
         const scaleOptions = Array.from(waifu2xScale.options);
         scaleOptions.forEach(opt => {
             if (parseInt(opt.value, 10) > 2) {
@@ -212,58 +197,37 @@ document.addEventListener('DOMContentLoaded', () => {
                 opt.disabled = false;
             }
         });
-
         if (isCunet && waifu2xScale.value !== '2') {
             waifu2xScale.value = '2';
         }
     }
 
-    // --- 事件绑定 ---
     uploadArea.addEventListener('click', () => fileInput.click());
-    
-    fileInput.addEventListener('change', (event) => {
-        const file = event.target.files[0];
-        if (file) {
-            handleImageUpload(file);
-        }
-    });
-
-    ['dragover', 'drop'].forEach(eventName => {
-        uploadArea.addEventListener(eventName, e => { e.preventDefault(); e.stopPropagation(); });
-    });
+    fileInput.addEventListener('change', (event) => { if (event.target.files[0]) handleImageUpload(event.target.files[0]); });
+    ['dragover', 'drop'].forEach(eventName => { uploadArea.addEventListener(eventName, e => { e.preventDefault(); e.stopPropagation(); }); });
     uploadArea.addEventListener('dragenter', () => uploadArea.classList.add('dragging'));
     uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('dragging'));
-
     uploadArea.addEventListener('drop', (e) => {
         uploadArea.classList.remove('dragging');
-        const file = e.dataTransfer.files[0];
-        if (file && file.type.startsWith('image/')) {
-            handleImageUpload(file);
-        }
+        if (e.dataTransfer.files[0] && e.dataTransfer.files[0].type.startsWith('image/')) handleImageUpload(e.dataTransfer.files[0]);
     });
-    
     executeBtn.addEventListener('click', executeUpscale);
-
     patchSizeSlider.addEventListener('input', () => {
         const index = patchSizeSlider.valueAsNumber;
         patchSizeValue.textContent = PATCH_SIZES[index] + 'px';
         patchSizeInfo.textContent = PATCH_INFO[index];
     });
-
     waifu2xArch.addEventListener('change', toggleWaifu2xOptions);
-
     zoomSlider.addEventListener('input', () => {
         const scale = zoomSlider.value / 100;
         zoomValue.textContent = zoomSlider.value + '%';
         resultCanvas.style.transform = `scale(${scale})`;
     });
-
     downloadBtn.addEventListener('click', () => {
         if (!resultCanvas || resultCanvas.width === 0) {
             statusDiv.innerHTML = '<i class="fas fa-times-circle"></i> 下载失败，没有可用的图像！';
             return;
         }
-        
         const link = document.createElement('a');
         link.href = resultCanvas.toDataURL('image/png');
         const fileName = originalFile ? originalFile.name.split('.').slice(0, -1).join('.') : 'enhanced';
@@ -271,11 +235,9 @@ document.addEventListener('DOMContentLoaded', () => {
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
-        
         statusDiv.innerHTML = '<i class="fas fa-check-circle"></i> 图片下载成功！';
     });
 
-    // --- 初始启动 ---
     initializeWorker();
     toggleWaifu2xOptions();
     patchSizeValue.textContent = PATCH_SIZES[patchSizeSlider.valueAsNumber] + 'px';
