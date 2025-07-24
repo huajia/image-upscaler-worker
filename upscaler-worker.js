@@ -5,10 +5,10 @@
 */
 console.log('[WORKER] ONNX.js Worker 脚本启动');
 
-// 导入 ONNX.js 运行时
-self.importScripts("./libs/ort.min.js");
+// 【修改】从CDN导入ONNX.js库，确保与WASM文件版本一致
+self.importScripts("https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/ort.min.js");
 
-// 设置WASM文件所在的目录路径"https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/";
+// 设置WASM文件所在的目录路径
 ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/";
 
 let modelCache = {};
@@ -24,11 +24,13 @@ self.onmessage = async (event) => {
             self.postMessage({ type: 'status', payload: { message: '图片解码完成，开始放大流程...' } });
             const resultImageData = await upscaleImage(imageData, config);
             
-            // 将结果（包含可转移对象ArrayBuffer）发送回主线程
             self.postMessage({ type: 'done', payload: { data: resultImageData.data.buffer, width: resultImageData.width, height: resultImageData.height } }, [resultImageData.data.buffer]);
         } catch (error) {
             console.error('[WORKER] 任务执行期间发生错误:', error);
-            self.postMessage({ type: 'error', payload: { message: error.message, stack: error.stack } });
+            // 【修改】更健壮的错误处理机制
+            const errorMessage = (error && error.message) ? error.message : String(error);
+            const errorStack = (error && error.stack) ? error.stack : 'No stack available.';
+            self.postMessage({ type: 'error', payload: { message: errorMessage, stack: errorStack } });
         }
     }
 };
@@ -45,24 +47,62 @@ async function createImageDataFromFile(file) {
 }
 
 
-// --- 模型加载函数 ---
+// --- 【重写】模型加载函数，增加进度回调 ---
 async function loadModel(modelPath) {
     if (modelCache[modelPath]) {
         console.log(`[WORKER] 从缓存中获取模型: ${modelPath}`);
         return modelCache[modelPath];
     }
     
-    self.postMessage({ type: 'status', payload: { message: `正在加载模型: ${modelPath.split('/').pop()}` } });
-    console.log(`[WORKER] 正在加载模型: ${modelPath}`);
-    
-    const session = await ort.InferenceSession.create(modelPath, {
-        executionProviders: ['wasm'],
-        graphOptimizationLevel: 'all'
-    });
-    
-    modelCache[modelPath] = session;
-    console.log(`[WORKER] 模型加载并初始化完毕: ${modelPath}`);
-    return session;
+    const modelFile = modelPath.split('/').pop();
+    self.postMessage({ type: 'status', payload: { message: `准备下载模型: ${modelFile}` } });
+
+    try {
+        const response = await fetch(modelPath, { cache: 'force-cache' }); // 使用缓存
+        if (!response.ok) {
+            throw new Error(`下载模型失败: ${response.status} ${response.statusText}`);
+        }
+
+        const contentLength = response.headers.get('content-length');
+        const totalSize = contentLength ? parseInt(contentLength, 10) : 0;
+        let loadedSize = 0;
+
+        const reader = response.body.getReader();
+        const chunks = [];
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            
+            chunks.push(value);
+            loadedSize += value.length;
+            
+            if (totalSize > 0) {
+                const progress = loadedSize / totalSize;
+                self.postMessage({ type: 'download_progress', payload: { progress, file: modelFile } });
+            }
+        }
+
+        const modelBuffer = new Uint8Array(loadedSize);
+        let offset = 0;
+        for (const chunk of chunks) {
+            modelBuffer.set(chunk, offset);
+            offset += chunk.length;
+        }
+
+        self.postMessage({ type: 'status', payload: { message: `正在创建AI会话...` } });
+        
+        const session = await ort.InferenceSession.create(modelBuffer.buffer, {
+            executionProviders: ['wasm'],
+            graphOptimizationLevel: 'all'
+        });
+
+        modelCache[modelPath] = session;
+        console.log(`[WORKER] 模型加载并初始化完毕: ${modelPath}`);
+        return session;
+    } catch (e) {
+        console.error(`[WORKER] 加载模型时出错 ${modelPath}:`, e);
+        throw e; // 重新抛出错误，由上层捕获
+    }
 }
 
 
@@ -73,7 +113,9 @@ async function upscaleImage(imageData, config) {
     let currentHeight = imageData.height;
 
     const tasks = getWaifu2xTasks(config);
-    if (tasks.length === 0) { // 如果没有任务，直接返回原图
+    console.log(`[WORKER] 生成的任务列表:`, tasks);
+
+    if (tasks.length === 0) {
          self.postMessage({ type: 'status', payload: { message: '无需处理，返回原图。' } });
          return imageData;
     }
@@ -113,6 +155,8 @@ async function processWithModel(inputData, width, height, model, patchSize, scal
     let processedTiles = 0;
     let startTime = performance.now();
 
+    self.postMessage({ type: 'progress', payload: { progress: 0, eta: 0, task: taskName } });
+
     for (let y = 0; y < tilesY; y++) {
         for (let x = 0; x < tilesX; x++) {
             const xStart = x * patchSize;
@@ -141,7 +185,7 @@ async function processWithModel(inputData, width, height, model, patchSize, scal
 }
 
 
-// --- 数据转换与分块辅助函数 ---
+// --- 数据转换与分块辅助函数 (无改动) ---
 
 function imageDataToFloat32(imageData) {
     const { data, width, height } = imageData;
@@ -221,7 +265,6 @@ function composePatch(target, targetW, targetH, x, y, patch, w, h) {
 function getWaifu2xTasks(config) {
     const { arch, style, noise, scale } = config.waifu2x;
     
-    // 如果选择1倍放大且无降噪，则没有任务
     if (scale === 1 && noise === '0') {
         return [];
     }
@@ -235,12 +278,14 @@ function getWaifu2xTasks(config) {
             tasks.push({ modelPath: `${basePath}noise${noise}.onnx`, scale: 1 });
         }
         if (scale > 1) {
+             // 假设模型命名为 scale2x.onnx, scale4x.onnx 等
              tasks.push({ modelPath: `${basePath}scale${scale}x.onnx`, scale: scale });
         }
     } else if (arch === 'cunet') {
-        // CUNet只支持2x放大
+        let effectiveScale = scale;
         if (scale !== 2) {
              console.warn(`[WORKER] CUNet仅支持2倍放大，但请求了${scale}倍。将强制执行2倍放大。`);
+             effectiveScale = 2;
         }
         let modelName;
         if (noise === '0') {
@@ -248,9 +293,8 @@ function getWaifu2xTasks(config) {
         } else {
             modelName = `noise${noise}_scale2x.onnx`;
         }
-        tasks.push({ modelPath: basePath + modelName, scale: 2 });
+        tasks.push({ modelPath: basePath + modelName, scale: effectiveScale });
     }
     
-    console.log(`[WORKER] 生成的任务列表:`, tasks);
     return tasks;
 }

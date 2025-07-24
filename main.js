@@ -25,7 +25,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const waifu2xScale = document.getElementById('waifu2x-scale');
 
     // --- 全局状态和配置 ---
-    const PATCH_SIZES = [16, 32, 48, 64, 96, 128, 192, 256, 384]; // 调整为更适合ONNX的尺寸
+    const PATCH_SIZES = [16, 32, 48, 64, 96, 128, 192, 256, 384];
     const PATCH_INFO = [
         "极低内存，极慢。用于内存极小的设备。", "非常低内存，非常慢。适合处理超大图片。", "低内存，较慢。", "中低内存，速度尚可。", "默认值。内存与速度的良好平衡。", "中高内存，速度快。推荐。", "高内存，速度很快。", "非常高内存，可能导致浏览器卡顿。", "实验性。极易导致浏览器崩溃。"
     ];
@@ -55,6 +55,11 @@ document.addEventListener('DOMContentLoaded', () => {
             case 'status':
                 statusDiv.innerHTML = `<i class="fas fa-info-circle"></i> ${payload.message}`;
                 break;
+            // 【新增】处理模型下载进度的逻辑
+            case 'download_progress':
+                const percentage = Math.round(payload.progress * 100);
+                statusDiv.innerHTML = `<i class="fas fa-cloud-download-alt fa-spin"></i> 正在下载模型 (${payload.file}): ${percentage}%`;
+                break;
             case 'progress':
                 updateProgress(payload.progress, payload.eta, payload.task);
                 break;
@@ -62,6 +67,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 renderUpscaledImage(payload);
                 break;
             case 'error':
+                // 现在 payload.message 会有正确的错误信息
                 console.error("Worker Error:", payload);
                 statusDiv.innerHTML = `<i class="fas fa-times-circle"></i> 处理失败: ${payload.message}`;
                 enableControls();
@@ -108,8 +114,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const reader = new FileReader();
         reader.onload = (e) => {
             const imageDataUrl = e.target.result;
-            const sizeInMB = (file.size / 1024 / 1024).toFixed(2);
-            originalInfo.textContent = `${file.name} • ${sizeInMB} MB`;
+            const img = new Image();
+            img.onload = () => {
+                const sizeInMB = (file.size / 1024 / 1024).toFixed(2);
+                originalInfo.textContent = `${img.width}×${img.height} • ${sizeInMB} MB`;
+            };
+            img.src = imageDataUrl;
 
             resultContainer.style.display = 'none';
             previewControls.style.display = 'none';
@@ -179,7 +189,7 @@ document.addEventListener('DOMContentLoaded', () => {
         waifu2xArch.disabled = false;
         patchSizeSlider.disabled = false;
         executeBtn.disabled = false;
-        fileInput.value = '';
+        // Do not clear file input here to allow re-running on the same file
         toggleWaifu2xOptions();
     }
     
@@ -187,7 +197,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const arch = waifu2xArch.value;
         const isCunet = arch === 'cunet';
         
-        // CUNet模式下禁用“图片风格”选项
         waifu2xStyle.disabled = isCunet;
         const styleGroup = waifu2xStyle.closest('.form-group');
         if (styleGroup) {
@@ -195,17 +204,15 @@ document.addEventListener('DOMContentLoaded', () => {
              styleGroup.style.pointerEvents = isCunet ? 'none' : 'auto';
         }
 
-        // CUNet只支持2x放大，禁用其他选项
         const scaleOptions = Array.from(waifu2xScale.options);
         scaleOptions.forEach(opt => {
             if (parseInt(opt.value, 10) > 2) {
                 opt.disabled = isCunet;
             } else {
-                opt.disabled = false; // 确保2x选项总是可用的
+                opt.disabled = false;
             }
         });
 
-        // 如果当前选择了CUNet且放大倍数不是2x，则自动改回2x
         if (isCunet && waifu2xScale.value !== '2') {
             waifu2xScale.value = '2';
         }
@@ -260,7 +267,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const link = document.createElement('a');
         link.href = resultCanvas.toDataURL('image/png');
         const fileName = originalFile ? originalFile.name.split('.').slice(0, -1).join('.') : 'enhanced';
-        link.download = `${fileName}-waifu2x-${Date.now()}.png`;
+        link.download = `${fileName}-waifu2x-${waifu2xArch.value}-${Date.now()}.png`;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
