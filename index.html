@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI图片放大 - Waifu2x 专业版</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <title>AI图片放大 - Waifu2x 专业版 (ONNX)</title>
+    <link rel="stylesheet" href="./all.min.css">
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -14,7 +14,7 @@
             <div class="app-header">
                 <i class="fas fa-expand-alt logo-icon"></i>
                 <h1>AI图片放大</h1>
-                <div class="version-badge">专业版</div>
+                <div class="version-badge">ONNX版</div>
             </div>
 
             <div class="status-card">
@@ -42,7 +42,7 @@
             </div>
 
             <!-- 高级设置 -->
-            <div class="settings-card" id="processing-settings" style="display: none;">
+            <div class="settings-card" id="processing-settings" style="display: block;">
                  <div class="settings-header">
                     <i class="fas fa-cog"></i>
                     <h2>放大设置</h2>
@@ -141,6 +141,8 @@
         </div>
     </div>
     
+    <!-- 引入 ONNX Runtime Web -->
+    <script src="./libs/ort.min.js"></script>
     <script src="main.js"></script>
 </body>
 </html>
