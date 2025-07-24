@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI图片放大 - Waifu2x 专业版</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- 左侧控制面板 -->
+        <div class="controls-panel glass-card">
+            <div class="app-header">
+                <i class="fas fa-expand-alt logo-icon"></i>
+                <h1>AI图片放大</h1>
+                <div class="version-badge">专业版</div>
+            </div>
+
+            <div class="status-card">
+                <div id="status">
+                    <i class="fas fa-info-circle"></i> 请选择一张图片
+                </div>
+                
+                <div class="action-buttons">
+                    <button id="executeBtn" class="execute-btn" style="display: none;">
+                        <i class="fas fa-play-circle"></i> 执行
+                    </button>
+                    <button id="downloadBtn" class="download-btn" style="display: none;">
+                        <i class="fas fa-download"></i> 下载高清图片
+                    </button>
+                </div>
+            </div>
+
+            <div class="upload-section">
+                <div class="upload-area" id="uploadArea">
+                    <i class="fas fa-cloud-upload-alt upload-icon"></i>
+                    <p>拖放图片或点击上传</p>
+                    <input type="file" id="fileInput" accept="image/*" style="display:none;">
+                </div>
+                <div class="upload-hint">支持 JPG, PNG, WebP 格式</div>
+            </div>
+
+            <!-- 高级设置 -->
+            <div class="settings-card" id="processing-settings" style="display: none;">
+                 <div class="settings-header">
+                    <i class="fas fa-cog"></i>
+                    <h2>放大设置</h2>
+                </div>
+                <!-- Waifu2x 设置现在是主要设置 -->
+                <div class="form-group">
+                    <label for="waifu2x-arch"><i class="fas fa-cogs"></i> 模型架构</label>
+                    <div class="select-wrapper">
+                        <select id="waifu2x-arch">
+                            <option value="swin_unet">Swin-UNET (效果更好)</option>
+                            <option value="cunet">CUNet (速度更快)</option>
+                        </select><i class="fas fa-chevron-down"></i>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="waifu2x-style"><i class="fas fa-palette"></i> 图片风格</label>
+                    <div class="select-wrapper">
+                        <select id="waifu2x-style">
+                            <option value="art">插画 (Art)</option>
+                            <option value="art_scan">扫描图 (Art Scan)</option>
+                            <option value="photo">照片 (Photo)</option>
+                        </select><i class="fas fa-chevron-down"></i>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="waifu2x-noise"><i class="fas fa-wind"></i> 降噪等级</label>
+                    <div class="select-wrapper">
+                        <select id="waifu2x-noise">
+                            <option value="0">无</option>
+                            <option value="1">等级 1</option>
+                            <option value="2">等级 2</option>
+                            <option value="3">等级 3</option>
+                        </select><i class="fas fa-chevron-down"></i>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="waifu2x-scale"><i class="fas fa-expand-arrows-alt"></i> 放大倍数</label>
+                    <div class="select-wrapper">
+                        <select id="waifu2x-scale">
+                            <option value="2">2倍</option>
+                            <option value="4">4倍 (仅Swin-UNET)</option>
+                        </select><i class="fas fa-chevron-down"></i>
+                    </div>
+                </div>
+                <hr style="border-color: rgba(255,255,255,0.1); margin: 25px 0;">
+                <div class="form-group">
+                    <label for="patchSizeSlider">
+                        <i class="fas fa-memory"></i> 性能/内存策略
+                        <span class="value-badge" id="patchSizeValue">128px</span>
+                    </label>
+                    <input type="range" id="patchSizeSlider" min="0" max="8" value="5" step="1">
+                    <div class="slider-info" id="patchSizeInfo">中高内存，速度快。推荐给性能较好的电脑。</div>
+                </div>
+            </div>
+            
+            <!-- 预览控制 -->
+            <div class="settings-card" id="previewControls" style="display: none;">
+                <div class="settings-header">
+                    <i class="fas fa-search-plus"></i>
+                    <h2>预览控制</h2>
+                </div>
+                
+                <div class="form-group">
+                    <label for="zoomSlider">
+                        <i class="fas fa-expand"></i> 缩放预览
+                        <span class="value-badge" id="zoomValue">100%</span>
+                    </label>
+                    <input type="range" id="zoomSlider" min="1" max="200" value="100">
+                </div>
+            </div>
+        </div>
+
+        <!-- 右侧图片展示区 -->
+        <div class="display-panel">
+            <div class="image-card glass-card" id="originalImageBox" style="display:none;">
+                <div class="card-header">
+                    <h2><i class="fas fa-image"></i> 原图</h2>
+                    <div class="image-info" id="originalInfo"></div>
+                </div>
+                <div class="image-container">
+                    <img id="originalImage" src="" alt="Original Image">
+                </div>
+            </div>
+            
+            <div class="image-card glass-card" id="resultContainer" style="display:none;">
+                <div class="card-header">
+                    <h2><i class="fas fa-magic"></i> 增强效果</h2>
+                    <div class="image-info" id="resultInfo"></div>
+                </div>
+                <div class="image-container">
+                    <div id="canvasZoomContainer">
+                         <canvas id="resultCanvas"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="main.js"></script>
+</body>
+</html>
