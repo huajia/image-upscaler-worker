@@ -22,7 +22,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const progressBar = document.getElementById('progressBar');
     const progressText = document.getElementById('progressText');
     const previewOverlay = document.getElementById('previewOverlay');
-    const tileGrid = document.getElementById('tileGrid');
 
     const tilingSlider = document.getElementById('tilingSlider');
     const tilingValue = document.getElementById('tilingValue');
@@ -65,11 +64,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     previewOverlay.textContent = payload.message;
                 }
                 break;
-            
-            case 'grid_info':
-                // Worker已发来精确的网格信息，现在画格子！
-                prepareTileGrid(payload);
-                break;
     
             case 'progress':
                 updateProgress(payload.progress, payload.tile, payload.task);
@@ -89,6 +83,10 @@ document.addEventListener('DOMContentLoaded', () => {
             case 'error':
                 console.error("Worker Error:", payload);
                 let friendlyMessage = payload.message;
+                // 检查是否是输入形状错误
+                if (payload.message.includes('Invalid input shape: {2,2}')) {
+                    friendlyMessage = '分割粒度/图片太小，请调整分割大小或确保图片足够大';
+                } 
                 if (payload.stack === 'No stack available.' && !isNaN(parseInt(payload.message))) {
                     friendlyMessage = '分割大小超出处理能力';
                 }
@@ -154,9 +152,6 @@ document.addEventListener('DOMContentLoaded', () => {
             alert('请先上传图片并等待分割方案计算完成！');
             return;
         }
-        
-        // 清空旧的网格
-        tileGrid.innerHTML = ''; 
         currentTiles = [];
     
         disableControls();
@@ -198,59 +193,49 @@ document.addEventListener('DOMContentLoaded', () => {
         statusDiv.innerHTML = '<i class="fas fa-paper-plane"></i> 任务已发送...';
         previewOverlay.textContent = "准备处理...";
         
-        // 注意：这里不再调用 prepareTileGrid，等待 Worker 的消息
         upscalerWorker.postMessage({ type: 'start', file: originalFile, config: config });
     }
     
-    function getWaifu2xTasks(waifuConfig) {
-        const { arch, style, noise, scale } = waifuConfig;
-        if (scale === 1 && noise === '0') return [];
-        
-        const isCunet = arch === 'cunet';
-        const effectiveStyle = isCunet ? 'art' : style;
-        const basePath = `./models/waifu2x/${arch}/${effectiveStyle}/`;
-        
-        let tasks = [];
-        
-        if (noise !== '0') {
-            if (!isCunet) {
-                tasks.push({ modelPath: `${basePath}noise${noise}.onnx`, scale: 1 });
-            }
-        }
-        if (scale > 1) {
-            if (isCunet) {
-                let modelName = (noise === '0') ? `scale2x.onnx` : `noise${noise}_scale2x.onnx`;
-                tasks.push({ modelPath: basePath + modelName, scale: 2 });
-            } else { // swin_unet
-                tasks.push({ modelPath: `${basePath}scale${scale}x.onnx`, scale: scale });
-            }
-        }
-        return tasks;
-    }
+    // in main.js
+function getWaifu2xTasks(waifuConfig) {
+    const { arch, style, noise, scale } = waifuConfig;
     
-    function prepareTileGrid(gridInfo) {
-        tileGrid.innerHTML = '';
-        currentTiles = [];
-        
-        const { cols, rows, tileWidth, tileHeight, stepX, stepY } = gridInfo;
+    // ★ 修改这里：将判断条件从 '0' 改为 '-1'
+    if (scale === 1 && noise === '-1') return []; // 1倍放大且无降噪，则任务列表为空
     
-        for (let row = 0; row < rows; row++) {
-            for (let col = 0; col < cols; col++) {
-                const tile = document.createElement('div');
-                tile.className = 'tile-cell';
-                
-                // 使用Worker传来的精确尺寸和位置
-                tile.style.width = `${tileWidth}px`;
-                tile.style.height = `${tileHeight}px`;
-                tile.style.left = `${col * stepX}px`;
-                tile.style.top = `${row * stepY}px`;
+    const isCunet = arch === 'cunet';
+    const effectiveStyle = isCunet ? 'art' : style;
+    const basePath = `./models/waifu2x/${arch}/${effectiveStyle}/`;
     
-                tileGrid.appendChild(tile);
-                currentTiles.push(tile);
-            }
+    let tasks = [];
+    
+    // ★ 修改这里：处理仅降噪的情况 (scale=1)
+    if (noise !== '-1') { // 如果选择了任何一个降噪等级
+        if (scale === 1) {
+             // 如果是1倍放大，则添加一个降噪任务
+             tasks.push({ modelPath: `${basePath}noise${noise}.onnx`, scale: 1 });
         }
     }
 
+    if (scale > 1) {
+        if (isCunet) {
+            // ★ 修改这里：判断条件从 '0' 改为 '-1'
+            let modelName = (noise === '-1') ? `scale2x.onnx` : `noise${noise}_scale2x.onnx`;
+            tasks.push({ modelPath: basePath + modelName, scale: 2 });
+        } else { // swin_unet
+            // ★ 修改这里：判断条件从 '0' 改为 '-1'
+             if (noise === '-1') {
+                // 仅放大
+                tasks.push({ modelPath: `${basePath}scale${scale}x.onnx`, scale: scale });
+             } else {
+                // 降噪 + 放大（根据您的文件结构，这通常是一个组合模型）
+                tasks.push({ modelPath: `${basePath}noise${noise}_scale${scale}x.onnx`, scale: scale });
+             }
+        }
+    }
+    return tasks;
+}
+    
     function disableControls() {
         uploadArea.style.pointerEvents = 'none';
         uploadArea.style.opacity = 0.6;
@@ -271,8 +256,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const scaleSelect = waifu2xScale;
         const styleSelect = waifu2xStyle;
         const scaleOptions = {
+            '1': document.querySelector('#waifu2x-scale option[value="1"]'),
             '2': document.querySelector('#waifu2x-scale option[value="2"]'),
-            '3': document.querySelector('#waifu2x-scale option[value="3"]'),
             '4': document.querySelector('#waifu2x-scale option[value="4"]'),
         };
 
@@ -280,8 +265,8 @@ document.addEventListener('DOMContentLoaded', () => {
             styleSelect.value = 'art';
             styleSelect.disabled = true;
 
+            scaleOptions['1'].disabled = false;
             scaleOptions['2'].disabled = false;
-            scaleOptions['3'].disabled = true;
             scaleOptions['4'].disabled = true;
             
             if (scaleSelect.value !== '2') {
@@ -289,9 +274,8 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         } else if (arch === 'swin_unet') {
             styleSelect.disabled = false;
-
+            scaleOptions['1'].disabled = false;
             scaleOptions['2'].disabled = false;
-            scaleOptions['3'].disabled = true;
             scaleOptions['4'].disabled = false;
             
             if (scaleSelect.value === '3') {
@@ -301,11 +285,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function updateTilingOptions(width, height) {
-        const MIN_TILE_SIZE = 16;
+        const MIN_TILE_SIZE = 8;
         const MAX_TILE_SIZE = 640;
         let options = new Map();
 
-        const sizesToTry = [32, 64, 96, 128, 192, 256, 384, 512]; 
+        const sizesToTry = [16,32, 64, 96, 128, 192, 256, 384, 512]; 
 
         for (const size of sizesToTry) {
             const cols = Math.max(1, Math.round(width / size));
@@ -332,11 +316,11 @@ document.addEventListener('DOMContentLoaded', () => {
             options.set('1x1', { cols: 1, rows: 1, tileSize: `${width}×${height}` });
         }
         
-        tilingOptions = Array.from(options.values()).sort((a, b) => (a.cols * a.rows) - (b.cols * b.rows));
+        tilingOptions = Array.from(options.values()).sort((a, b) => (b.cols * b.rows) - (a.cols * b.rows));
         
         let defaultIndex = tilingOptions.findIndex(opt => {
              const [w, h] = opt.tileSize.split('×').map(Number);
-             return w >= 32 && h >= 32;
+             return w >= 30 && h >= 30;
         });
         if (defaultIndex === -1) defaultIndex = 0;
 

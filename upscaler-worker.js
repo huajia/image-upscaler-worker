@@ -379,24 +379,35 @@ async function padding(x, left, right, top, bottom, mode) {
 
 // --- 获取任务列表 (从 unlimited.waifu2x 复制并简化) ---
 function getWaifu2xMethod(scale, noise_level) {
-    // ★★★ 这是唯一的修改点 ★★★
-    // 将从 UI 收到的 '0' (无降噪) 转换成内部逻辑使用的 -1
-    if (noise_level == 0) {
-        noise_level = -1;
-    }
-    // ★★★ 修改结束 ★★★
-    
     if (scale == 1) {
-        // 现在，当UI选择“无降噪”时，这里的 noise_level 已经是 -1，逻辑正确
-        if (noise_level == -1) return null;
+        // 如果是1倍放大：
+        if (noise_level == -1) {
+            // 1倍放大且无降噪，则不执行任何操作。
+            return null;
+        }
+        // 否则，直接返回对应的降噪模型名称，如 "noise0", "noise1" 等。
         return "noise" + noise_level;
+
     } else if (scale == 2) {
-        if (noise_level == -1) return "scale2x"; // 现在这条路可以被正确走到
+        // 如果是2倍放大：
+        if (noise_level == -1) {
+            // 无降噪，则使用纯放大模型 "scale2x"。
+            return "scale2x";
+        }
+        // 否则，使用带降噪的放大模型，如 "noise0_scale2x"。
         return "noise" + noise_level + "_scale2x";
+
     } else if (scale == 4) {
-        if (noise_level == -1) return "scale4x"; // 这条路也可以
+        // 如果是4倍放大（仅适用于swin_unet）：
+        if (noise_level == -1) {
+            // 无降噪，则使用纯放大模型 "scale4x"。
+            return "scale4x";
+        }
+        // 否则，使用带降噪的放大模型，如 "noise0_scale4x"。
         return "noise" + noise_level + "_scale4x";
     }
+    
+    // 其他未覆盖的情况，不执行操作。
     return null;
 }
 
@@ -472,7 +483,7 @@ async function upscaleImage(file, userConfig) {
     ctx.drawImage(sourceBitmap, 0, 0);
     const imageData = ctx.getImageData(0, 0, sourceWidth, sourceHeight);
     let x_tensor = new ort.Tensor('float32', imageDataToFloat32(imageData), [1, 3, sourceHeight, sourceWidth]);
-
+    self.postMessage({ type: 'status', payload: { message: `图像预处理完成，宽: ${sourceWidth}，高：${sourceHeight}` } });
     // 5. 初始化 SeamBlending
     const seam_blending = new SeamBlending(x_tensor.dims, model_config.scale, model_config.offset, tile_size);
     try {
@@ -481,25 +492,11 @@ async function upscaleImage(file, userConfig) {
         throw buildError;
     }
     const p = seam_blending.get_rendering_config();
-
-    // ★ 核心修改: 发送最精确的网格信息给主线程
-    self.postMessage({
-        type: 'grid_info',
-        payload: {
-            cols: p.w_blocks,
-            rows: p.h_blocks,
-            // 这是带重叠区的完整图块大小
-            tileWidth: seam_blending.blend_filter.dims[3], // 宽度在第4个维度
-            tileHeight: seam_blending.blend_filter.dims[2], // 高度在第3个维度
-            // 这是不含重叠区的步进距离
-            stepX: p.output_tile_step,
-            stepY: p.output_tile_step
-        }
-    });
+    self.postMessage({ type: 'status', payload: { message: `开始发送图片给AI` } });
 
     // 6. 对整个图像进行 Padding
     x_tensor = await padding(x_tensor, BigInt(p.pad[0]), BigInt(p.pad[1]), BigInt(p.pad[2]), BigInt(p.pad[3]), model_config.padding);
-
+    self.postMessage({ type: 'status', payload: { message: `AI开始工作` } });
     // 7. 图块处理循环
     self.postMessage({ type: 'progress', payload: { progress: 0, tile: null, task: taskName } });
 

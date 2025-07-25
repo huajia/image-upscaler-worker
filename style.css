@@ -1,5 +1,5 @@
 :root {
-    --primary: #4361ee;
+    --primary: #937566;
     --primary-dark: #3a56d4;
     --secondary: #7209b7;
     --success: #06d6a0;
@@ -26,8 +26,8 @@ body {
     align-items: center;
     min-height: 100vh;
     padding: 20px;
-    background: linear-gradient(135deg, #1a2a6c, #571a1a, #1a2a6c);
-    background-size: 400% 400%;
+    background: radial-gradient(#0c144c, #150b2d, #061223);
+    background-size: 500% 400%;
     animation: gradientBG 60s ease infinite;
     color: var(--light);
     line-height: 1.6;
@@ -117,7 +117,6 @@ body {
 .upload-area {
     border: 2px dashed rgba(255, 255, 255, 0.3);
     border-radius: 12px;
-    padding: 40px 20px;
     text-align: center;
     cursor: pointer;
     transition: var(--transition);
@@ -327,7 +326,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
 }
 
 .status-card {
-    margin-top: auto;
+    margin: 10px 0;
     background: rgba(30, 30, 45, 0.4);
     border-radius: 14px;
     padding: 20px;
@@ -342,7 +341,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
     border-radius: 10px;
     font-size: 15px;
     min-height: 52px;
-    margin-bottom: 20px;
+    margin-bottom: 6px;
     line-height: 1.5;
 }
 
@@ -360,6 +359,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
 button {
     padding: 14px 20px;
     border-radius: 10px;
+    margin-top: 10px;
     border: none;
     font-weight: 600;
     font-size: 15px;
@@ -441,7 +441,6 @@ button:disabled {
     padding: 20px;
     overflow: auto;
     display: flex;
-    align-items: center;
     justify-content: center;
     width: 100%;
     height: 100%;
@@ -451,7 +450,6 @@ button:disabled {
     max-width: 100%;
     max-height: 100%;
     display: block;
-    border-radius: 10px;
     box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25);
     background: 
         linear-gradient(45deg, #222 25%, transparent 25%, transparent 75%, #222 75%),
@@ -460,17 +458,10 @@ button:disabled {
     background-position: 0 0, 10px 10px;
 }
 
-.preview-container {
-    position: relative;
-    width: 100%;
-    height: 100%;
-    overflow: hidden;
-}
-
 .preview-overlay {
     position: absolute;
-    top: 10px;
-    left: 10px;
+    top: 17px;
+    left: 150px;
     background: rgba(0, 0, 0, 0.7);
     padding: 8px 12px;
     border-radius: 8px;
@@ -503,34 +494,6 @@ button:disabled {
     transform: translate(-50%, -50%);
     font-size: 12px;
     color: white;
-}
-
-.tile-grid {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    pointer-events: none;
-    z-index: 5;
-}
-
-.tile-cell {
-    position: absolute;
-    border: 1px solid rgba(255, 0, 0, 0.3);
-    background: rgba(255, 0, 0, 0.1);
-    transition: all 0.3s ease;
-}
-
-.tile-cell.active {
-    background: rgba(0, 255, 0, 0.3);
-    border-color: rgba(0, 255, 0, 0.8);
-    z-index: 10;
-}
-
-.tile-cell.processed {
-    background: rgba(67, 97, 238, 0.3);
-    border-color: rgba(67, 97, 238, 0.8);
 }
 
 @media (max-width: 1200px) {

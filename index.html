@@ -11,6 +11,13 @@
     <div class="app-container">
         
         <div class="controls-panel glass-card">
+            <div class="app-header">
+                <div class="logo-icon">
+                    <i class="fas fa-robot"></i>
+                </div>
+                <h1>AI图像放大系统</h1>
+                <span class="version-badge">V2.3</span>
+            </div>
             <div class="status-card glass-card">
                 <div id="status">
                     <i class="fas fa-info-circle"></i> 等待上传图片...
@@ -25,13 +32,7 @@
                     </button>
                 </div>
             </div>
-            <div class="app-header">
-                <div class="logo-icon">
-                    <i class="fas fa-robot"></i>
-                </div>
-                <h1>AI图像放大系统</h1>
-                <span class="version-badge">V2.3</span>
-            </div>
+            
             
             <div class="upload-section">
                 <div class="upload-area" id="uploadArea">
@@ -81,11 +82,12 @@
                         <i class="fas fa-filter"></i> 降噪级别
                     </label>
                     <div class="select-wrapper">
-                        <select id="waifu2x-noise">
-                            <option value="0">无降噪</option>
-                            <option value="1">轻度降噪</option>
-                            <option value="2">中度降噪</option>
-                            <option value="3">重度降噪</option>
+                        <select id="waifu2x-noise" class="form-select">
+                            <option value="-1">无降噪</option> 
+                            <option value="0">等级 0</option> 
+                            <option value="1">等级 1</option>
+                            <option value="2">等级 2</option>
+                            <option value="3">等级 3</option>
                         </select>
                         <i class="fas fa-chevron-down"></i>
                     </div>
@@ -98,8 +100,8 @@
                     <div class="select-wrapper">
                         <select id="waifu2x-scale">
                             <option value="2">2倍</option>
-                            <option value="3">3倍</option>
                             <option value="4">4倍</option>
+                            <option value="1">不放大</option>
                         </select>
                         <i class="fas fa-chevron-down"></i>
                     </div>
@@ -149,7 +151,7 @@
         </div>
         
         <div class="display-panel">
-            <div class="image-card glass-card">
+            <div class="image-card glass-card" style="height:50%;">
                 <div class="card-header">
                     <h2><i class="fas fa-image"></i> 原始图片</h2>
                     <span class="image-info" id="originalInfo">0×0 • 0 MB</span>
@@ -172,7 +174,6 @@
                             <div class="progress-bar" id="progressBar"></div>
                             <div class="progress-text" id="progressText">0%</div>
                         </div>
-                        <div class="tile-grid" id="tileGrid"></div>
                     </div>
                 </div>
             </div>
