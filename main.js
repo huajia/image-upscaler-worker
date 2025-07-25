@@ -1,6 +1,60 @@
 document.addEventListener('DOMContentLoaded', () => {
     console.log("AI图像放大系统 (智能分割版) 已加载");
+    // =================================================================
+// ▼▼▼▼▼ 插件接口：接收来自Chrome插件的图片数据 ▼▼▼▼▼
+// =================================================================
 
+/**
+ * 将 dataURL (base64) 转换为 File 对象
+ * @param {string} dataurl - 图片的 dataURL
+ * @param {string} filename - 要创建的文件名
+ * @returns {File} - 转换后的 File 对象
+ */
+function dataURLtoFile(dataurl, filename) {
+    let arr = dataurl.split(','),
+        // 从 dataURL 头部获取 MIME 类型，例如 "image/png"
+        mime = arr[0].match(/:(.*?);/)[1],
+        // 解码 base64 数据
+        bstr = atob(arr[1]),
+        n = bstr.length,
+        u8arr = new Uint8Array(n);
+    while (n--) {
+        u8arr[n] = bstr.charCodeAt(n);
+    }
+    return new File([u8arr], filename, {type: mime});
+}
+
+// 监听由Chrome插件派发的 'aiUpscalerInjectData' 自定义事件
+window.addEventListener('aiUpscalerInjectData', (event) => {
+    console.log('成功接收到来自AI图像放大插件的数据！', event.detail);
+    
+    // 确保事件的 detail 中包含 imageDataUrl
+    if (event.detail && event.detail.imageDataUrl) {
+        const imageDataUrl = event.detail.imageDataUrl;
+        
+        // 生成一个动态的文件名
+        const fileExtension = imageDataUrl.substring("data:image/".length, imageDataUrl.indexOf(";base64"));
+        const fileName = `from_extension_${Date.now()}.${fileExtension || 'png'}`;
+        
+        // 将 dataURL 转换为 File 对象
+        const imageFile = dataURLtoFile(imageDataUrl, fileName);
+
+        // 调用应用中已有的图片处理函数，就像用户手动上传了一样
+        handleImageUpload(imageFile);
+
+        // （可选）更新状态，给用户一个明确的反馈
+        const statusDiv = document.getElementById('status');
+        if(statusDiv) {
+            statusDiv.innerHTML = '<i class="fas fa-check-circle"></i> 图片已从插件成功载入！';
+        }
+    } else {
+        console.error('从插件接收到的数据格式不正确。');
+    }
+});
+
+// =================================================================
+// ▲▲▲▲▲ 插件接口：代码结束 ▲▲▲▲▲
+// =================================================================
     // DOM元素
     const fileInput = document.getElementById('fileInput');
     const uploadArea = document.getElementById('uploadArea');
