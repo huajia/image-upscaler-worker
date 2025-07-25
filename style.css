@@ -42,11 +42,11 @@ body {
 .app-container {
     display: flex;
     gap: 25px;
-    width: 100%;height:95vh;
+    width: 100%;
+    height: 95vh;
     max-width: 1600px;
 }
 
-/* 玻璃态卡片样式 */
 .glass-card {
     background: var(--glass-bg);
     backdrop-filter: blur(12px);
@@ -63,18 +63,18 @@ body {
     box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2);
 }
 
-/* 控制面板 */
 .controls-panel {
     flex: 0 0 380px;
-    display: flex;
     flex-direction: column;
     padding: 25px;
-    gap: 25px;overflow-y: scroll; scrollbar-width: none;   
-  -ms-overflow-style: none;
+    gap: 25px;
+    overflow-y: auto;
+    scrollbar-width: none;
 }
 .controls-panel::-webkit-scrollbar {
-  display: none; /* 直接不显示滚动条 */
+    display: none;
 }
+
 .app-header {
     display: flex;
     align-items: center;
@@ -110,7 +110,6 @@ body {
     margin-left: auto;
 }
 
-/* 上传区域 */
 .upload-section {
     margin-bottom: 15px;
 }
@@ -167,11 +166,10 @@ body {
     margin-top: 10px;
 }
 
-/* 设置卡片 */
 .settings-card {
     padding: 20px;
+    margin: 20px 0;
     border-radius: 14px;
-    background: rgba(30, 30, 45, 0.4);
 }
 
 .settings-header {
@@ -193,7 +191,6 @@ body {
     font-weight: 600;
 }
 
-/* 表单控件 */
 .form-group {
     margin-bottom: 22px;
 }
@@ -292,7 +289,43 @@ input[type="range"]::-webkit-slider-thumb:hover {
     line-height: 1.4;
 }
 
-/* 状态卡片 */
+.memory-options {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    margin-top: 15px;
+}
+
+.memory-option {
+    padding: 12px;
+    border-radius: 10px;
+    background: rgba(0, 0, 0, 0.2);
+    text-align: center;
+    cursor: pointer;
+    transition: var(--transition);
+    border: 1px solid transparent;
+}
+
+.memory-option:hover {
+    background: rgba(67, 97, 238, 0.2);
+}
+
+.memory-option.active {
+    background: rgba(67, 97, 238, 0.3);
+    border-color: var(--primary);
+    box-shadow: 0 0 10px rgba(67, 97, 238, 0.3);
+}
+
+.memory-option h4 {
+    font-size: 14px;
+    margin-bottom: 5px;
+}
+
+.memory-option p {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.7);
+}
+
 .status-card {
     margin-top: auto;
     background: rgba(30, 30, 45, 0.4);
@@ -363,7 +396,6 @@ button:disabled {
     box-shadow: 0 6px 20px rgba(6, 214, 160, 0.4);
 }
 
-/* 显示面板 */
 .display-panel {
     flex: 1;
     display: flex;
@@ -411,9 +443,11 @@ button:disabled {
     display: flex;
     align-items: center;
     justify-content: center;
+    width: 100%;
+    height: 100%;
 }
 
-#originalImage, #canvasContainer canvas {
+#originalImage, #resultCanvas {
     max-width: 100%;
     max-height: 100%;
     display: block;
@@ -426,23 +460,79 @@ button:disabled {
     background-position: 0 0, 10px 10px;
 }
 
-#canvasZoomContainer {
+.preview-container {
+    position: relative;
     width: 100%;
     height: 100%;
-    overflow: auto;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 10px;
-    background: rgba(0, 0, 0, 0.15);
+    overflow: hidden;
 }
 
-#canvasContainer canvas {
-    transform-origin: top left;
-    transition: transform 0.2s ease-out;
+.preview-overlay {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    background: rgba(0, 0, 0, 0.7);
+    padding: 8px 12px;
+    border-radius: 8px;
+    font-size: 14px;
+    z-index: 10;
 }
 
-/* 响应式设计 */
+.progress-container {
+    position: absolute;
+    bottom: 10px;
+    left: 10px;
+    right: 10px;
+    height: 8px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.progress-bar {
+    height: 100%;
+    background: linear-gradient(90deg, var(--primary), var(--secondary));
+    width: 0%;
+    transition: width 0.3s ease;
+}
+
+.progress-text {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 12px;
+    color: white;
+}
+
+.tile-grid {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 5;
+}
+
+.tile-cell {
+    position: absolute;
+    border: 1px solid rgba(255, 0, 0, 0.3);
+    background: rgba(255, 0, 0, 0.1);
+    transition: all 0.3s ease;
+}
+
+.tile-cell.active {
+    background: rgba(0, 255, 0, 0.3);
+    border-color: rgba(0, 255, 0, 0.8);
+    z-index: 10;
+}
+
+.tile-cell.processed {
+    background: rgba(67, 97, 238, 0.3);
+    border-color: rgba(67, 97, 238, 0.8);
+}
+
 @media (max-width: 1200px) {
     .app-container {
         flex-direction: column;
@@ -481,5 +571,9 @@ button:disabled {
     
     .image-info {
         align-self: flex-start;
+    }
+    
+    .memory-options {
+        grid-template-columns: 1fr;
     }
 }

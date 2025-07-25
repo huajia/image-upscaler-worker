@@ -1,5 +1,5 @@
 {
-    "liveServer.settings.port": 5501,
+    "liveServer.settings.port": 5502,
     "liveServer.settings.server.extraHeaders": {
       "Cross-Origin-Opener-Policy": "same-origin",
       "Cross-Origin-Embedder-Policy": "require-corp"
