@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI图片放大 - Waifu2x 专业版 (ONNX)</title>
+    <title>AI图片放大</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="style.css">
 </head>
@@ -13,7 +13,7 @@
         <div class="controls-panel glass-card">
             <div class="app-header">
                 <div class="logo-icon">
-                    <i class="fas fa-robot"></i>
+                    <img class="fas fa-robot icon" src="64.png" />
                 </div>
                 <h1>AI图像放大系统</h1>
                 <span class="version-badge">V2.3</span>
@@ -57,8 +57,8 @@
                     </label>
                     <div class="select-wrapper">
                         <select id="waifu2x-arch">
-                            <option value="cunet">CUNet (高质量)</option>
-                            <option value="swin_unet">Swin-Unet (最新)</option>
+                            <option value="cunet">普通质量</option>
+                            <option value="swin_unet">专业质量</option>
                         </select>
                         <i class="fas fa-chevron-down"></i>
                     </div>
@@ -153,7 +153,7 @@
         <div class="display-panel">
             <div class="image-card glass-card" style="height:50%;">
                 <div class="card-header">
-                    <h2><i class="fas fa-image"></i> 原始图片</h2>
+                    <h2><i class="fas fa-image"></i> 原始图片<small>建议大于36px*36px</small></h2>
                     <span class="image-info" id="originalInfo">0×0 • 0 MB</span>
                 </div>
                 <div class="image-container" id="originalImageBox" style="display: none;">

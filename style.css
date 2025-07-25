@@ -1,5 +1,5 @@
 :root {
-    --primary: #ed9062;
+    --primary: #8bc0d2;
     --primary-dark: #3a56d4;
     --secondary: #7209b7;
     --success: #06d6a0;
@@ -38,6 +38,8 @@ body {
     50% { background-position: 100% 50%; }
     100% { background-position: 0% 50%; }
 }
+.icon{    margin-top: -10px;
+    width: 102%;}
 
 .app-container {
     display: flex;

@@ -109,17 +109,35 @@ window.addEventListener('aiUpscalerInjectData', (event) => {
         }
     }
 
+    function handleModelLoadProgress(payload) {
+        const { progress, modelName } = payload;
+        progressBar.style.width = `${progress}%`;
+        progressText.textContent = `${progress}%`;
+        const statusMessage = `<i class="fas fa-download"></i> 正在下载AI模型 ${modelName}... ${progress}%`;
+        statusDiv.innerHTML = statusMessage;
+        previewOverlay.textContent = `下载模型: ${modelName} (${progress}%)`;
+    }
+
     function handleWorkerMessage(event) {
         const { type, payload } = event.data;
         switch (type) {
             case 'status':
                 statusDiv.innerHTML = `<i class="fas fa-info-circle"></i> ${payload.message}`;
-                if (payload.message.includes('加载模型')) {
+                // 只有在模型加载相关消息时才更新遮罩层
+                if (payload.message.includes('加载') || payload.message.includes('下载') || payload.message.includes('解析')) {
                     previewOverlay.textContent = payload.message;
                 }
                 break;
     
+            // --- ▼▼▼ 新增 case ▼▼▼ ---
+            case 'model_load_progress':
+                handleModelLoadProgress(payload);
+                break;
+            // --- ▲▲▲ 新增 case 结束 ▲▲▲ ---
+
             case 'progress':
+                // 重置进度条样式，为处理进度做准备
+                progressBar.style.transition = 'width 0.1s ease-in-out';
                 updateProgress(payload.progress, payload.tile, payload.task);
                 break;
     
@@ -150,6 +168,7 @@ window.addEventListener('aiUpscalerInjectData', (event) => {
                 break;
         }
     }
+
 
     function drawTileToCanvas(payload) {
         const { data, width, height, dx, dy } = payload;
@@ -339,11 +358,11 @@ function getWaifu2xTasks(waifuConfig) {
     }
 
     function updateTilingOptions(width, height) {
-        const MIN_TILE_SIZE = 8;
+        const MIN_TILE_SIZE = 16;
         const MAX_TILE_SIZE = 640;
         let options = new Map();
 
-        const sizesToTry = [16,32, 64, 96, 128, 192, 256, 384, 512]; 
+        const sizesToTry = [28,32, 64, 96, 128, 192, 256, 384, 512]; 
 
         for (const size of sizesToTry) {
             const cols = Math.max(1, Math.round(width / size));

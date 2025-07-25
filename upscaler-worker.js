@@ -1,6 +1,6 @@
 /* 
 =========================================================================
-== upscaler-worker.js (V7 - 正确实现 SeamBlending 与实时进度)
+== upscaler-worker.js
 =========================================================================
 */
 console.log('[WORKER] ONNX.js Worker 脚本启动 (SeamBlending + 实时进度版)');
@@ -88,16 +88,57 @@ const CONFIG = {
 
 // --- ONNX Session 管理 (简化版) ---
 let modelCache = {};
+// --- ▼▼▼ 修改后的代码 ▼▼▼ ---
 async function loadModel(modelPath) {
-    if (modelCache[modelPath]) return modelCache[modelPath];
-    self.postMessage({ type: 'status', payload: { message: `加载模型: ${modelPath.split('/').pop()}` } });
+    if (modelCache[modelPath]) {
+        self.postMessage({ type: 'status', payload: { message: `从缓存加载模型: ${modelPath.split('/').pop()}` } });
+        return modelCache[modelPath];
+    }
+    
+    const modelName = modelPath.split('/').pop();
+    self.postMessage({ type: 'status', payload: { message: `准备下载模型: ${modelName}` } });
+
     const response = await fetch(modelPath);
     if (!response.ok) throw new Error(`模型文件加载失败 (${modelPath}): ${response.statusText}`);
-    const modelBuffer = await response.arrayBuffer();
+
+    // --- 流式读取并报告进度 ---
+    const reader = response.body.getReader();
+    const totalSize = +response.headers.get('Content-Length'); // 获取文件总大小
+    let loadedSize = 0;
+    let chunks = [];
+    let lastReportedProgress = -1;
+
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+            break;
+        }
+        chunks.push(value);
+        loadedSize += value.length;
+        if (totalSize) {
+            const progress = Math.round((loadedSize / totalSize) * 100);
+            // 避免过于频繁地发送消息，只有在进度变化时才发送
+            if (progress > lastReportedProgress) {
+                self.postMessage({
+                    type: 'model_load_progress',
+                    payload: { progress: progress, modelName: modelName }
+                });
+                lastReportedProgress = progress;
+            }
+        }
+    }
+    
+    // --- 组合数据块并创建 Session ---
+    self.postMessage({ type: 'status', payload: { message: `模型下载完成，正在解析: ${modelName}` } });
+    const blob = new Blob(chunks);
+    const modelBuffer = await blob.arrayBuffer();
+    chunks = []; // 释放内存
+
     const session = await ort.InferenceSession.create(modelBuffer, {
         executionProviders: ['wasm'],
         graphOptimizationLevel: 'all'
     });
+
     modelCache[modelPath] = session;
     return session;
 }
