@@ -523,8 +523,8 @@ button:disabled {
 
 .preview-overlay {
     position: absolute;
-    top: 17px;
-    left: 150px;
+    top: 0;
+    right: 150px;
     background: rgba(0, 0, 0, 0.7);
     padding: 8px 12px;
     border-radius: 8px;

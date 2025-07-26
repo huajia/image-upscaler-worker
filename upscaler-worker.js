@@ -121,15 +121,15 @@ let modelCache = {};
 
 async function loadModel(modelPath) {
     if (modelCache[modelPath]) {
-        self.postMessage({ type: 'status', payload: { message: `从缓存加载模型: ${modelPath.split('/').pop()}` } });
+        self.postMessage({ type: 'status', payload: { message: `从缓存加载模型` } });
         return modelCache[modelPath];
     }
     
     const modelName = modelPath.split('/').pop();
-    self.postMessage({ type: 'status', payload: { message: `准备下载模型: ${modelName}` } });
+    self.postMessage({ type: 'status', payload: { message: `准备下载模型` } });
 
     const response = await fetch(modelPath);
-    if (!response.ok) throw new Error(`模型文件加载失败 (${modelPath}): ${response.statusText}`);
+    if (!response.ok) throw new Error(`模型文件加载失败: ${response.statusText}`);
 
 
     const reader = response.body.getReader();
@@ -158,7 +158,7 @@ async function loadModel(modelPath) {
         }
     }
 
-    self.postMessage({ type: 'status', payload: { message: `模型下载完成，正在解析: ${modelName},大概1分钟左右` } });
+    self.postMessage({ type: 'status', payload: { message: `模型下载完成，正在解析,大概1分钟左右` } });
     const blob = new Blob(chunks);
     const modelBuffer = await blob.arrayBuffer();
     chunks = []; 
@@ -505,7 +505,7 @@ async function upscaleImage(file, userConfig) {
 
     const model = await loadModel(model_config.path);
     const taskName = model_config.path.split('/').pop();
-    self.postMessage({ type: 'status', payload: { message: `模型加载完成: ${taskName}` } });
+    self.postMessage({ type: 'status', payload: { message: `模型加载完成` } });
 
     const offscreenCanvas = new OffscreenCanvas(sourceWidth, sourceHeight);
     const ctx = offscreenCanvas.getContext('2d', { willReadFrequently: true });

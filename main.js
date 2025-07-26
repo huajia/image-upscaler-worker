@@ -107,8 +107,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 const { progress, modelName } = payload;
                 progressBar.style.width = `${progress}%`;
                 progressText.textContent = `${progress}%`;
-                statusDiv.innerHTML = `<i class="fas fa-download"></i> 正在下载AI模型 ${modelName}... ${progress}%`;
-                previewOverlay.textContent = `下载模型: ${modelName} (${progress}%)`;
+                statusDiv.innerHTML = `<i class="fas fa-download"></i> 正在下载AI模型... ${progress}%`;
+                previewOverlay.textContent = `下载模型:(${progress}%)`;
                 break;
             case 'progress':
                 progressBar.style.transition = 'width 0.1s ease-in-out';
@@ -131,6 +131,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 let friendlyMessage = payload.message;
                 if (payload.message.includes('Invalid input shape: {2,2}')) {
                     friendlyMessage = '分割粒度/图片太小，请调整分割大小或确保图片足够大';
+                }
+                if (payload.message.includes('Failed to fetch')) {
+                    friendlyMessage = '下载失败，请检查网络(可能服务器超出免费额度了）';
                 }
                 if (payload.stack === 'No stack available.' && !isNaN(parseInt(payload.message))) {
                     friendlyMessage = '分割大小超出处理能力';
@@ -215,7 +218,7 @@ document.addEventListener('DOMContentLoaded', () => {
         setPreviewElementsSize(originalImageDimensions.width, originalImageDimensions.height);
         const ctx = resultCanvas.getContext('2d');
         ctx.clearRect(0, 0, targetWidth, targetHeight);
-        resultCanvas.style.backgroundColor = '#48484848';
+        resultCanvas.style.backgroundColor = '#000000bf';
 
         resultInfo.textContent = `放大后(左): ${targetWidth}×${targetHeight}`;
         statusDiv.innerHTML = '<i class="fas fa-paper-plane"></i> 任务已发送...';
@@ -238,7 +241,7 @@ document.addEventListener('DOMContentLoaded', () => {
             originalBox.style.height = `${height}px`;
         }
         if (resultBox) {
-            resultBox.style.width = `${width}px`; 
+            resultBox.style.width = '50%'; 
             resultBox.style.height = `${height}px`;
         }
     }
@@ -399,7 +402,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const percentage = Math.round(progress * 100);
         progressBar.style.width = `${percentage}%`;
         progressText.textContent = `${percentage}%`;
-        previewOverlay.textContent = `处理中: ${task} (${percentage}%)`;
+        previewOverlay.textContent = `处理中: (${percentage}%)`;
     }
     function resetComparisonSlider() {
         requestAnimationFrame(() => {
