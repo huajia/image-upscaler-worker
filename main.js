@@ -1,7 +1,7 @@
 document.addEventListener('DOMContentLoaded', () => {
     console.log("AI图像放大系统 (智能分割版) 已加载");
     // =================================================================
-// ▼▼▼▼▼ 插件接口：接收来自Chrome插件的图片数据 ▼▼▼▼▼
+// ▼▼▼▼▼ main.js插件接口：接收来自Chrome插件的图片数据 ▼▼▼▼▼
 // =================================================================
 
 /**
@@ -328,32 +328,43 @@ function getWaifu2xTasks(waifuConfig) {
         const arch = waifu2xArch.value;
         const scaleSelect = waifu2xScale;
         const styleSelect = waifu2xStyle;
+        const noiseSelect = waifu2xNoise; // 新增，方便控制
         const scaleOptions = {
             '1': document.querySelector('#waifu2x-scale option[value="1"]'),
             '2': document.querySelector('#waifu2x-scale option[value="2"]'),
             '4': document.querySelector('#waifu2x-scale option[value="4"]'),
         };
-
+    
         if (arch === 'cunet') {
             styleSelect.value = 'art';
             styleSelect.disabled = true;
-
+            noiseSelect.disabled = false; // 启用降噪
+    
             scaleOptions['1'].disabled = false;
             scaleOptions['2'].disabled = false;
             scaleOptions['4'].disabled = true;
             
-            if (scaleSelect.value !== '2') {
+            if (scaleSelect.value === '4') {
                 scaleSelect.value = '2';
             }
         } else if (arch === 'swin_unet') {
             styleSelect.disabled = false;
+            noiseSelect.disabled = false; // 启用降噪
             scaleOptions['1'].disabled = false;
             scaleOptions['2'].disabled = false;
             scaleOptions['4'].disabled = false;
+        // --- ▼▼▼ 新增的逻辑分支 ▼▼▼ ---
+        } else if (arch === 'real_esrgan') {
+            // Real-ESRGAN 模型是通用的，没有风格和降噪级别选项
+            styleSelect.disabled = true;
+            noiseSelect.disabled = true;
             
-            if (scaleSelect.value === '3') {
-                scaleSelect.value = '2';
-            }
+            // Real-ESRGAN-x4plus 是固定的4倍放大
+            scaleSelect.value = '4';
+            scaleOptions['1'].disabled = true;
+            scaleOptions['2'].disabled = true;
+            scaleOptions['4'].disabled = false; // 只允许4倍
+        // --- ▲▲▲ 新增逻辑结束 ▲▲▲ ---
         }
     }
 
@@ -405,7 +416,7 @@ function getWaifu2xTasks(waifuConfig) {
 
     function updateTilingInfoText() {
         if (tilingOptions.length > 0) {
-            const selectedIndex = parseInt(tilingSlider.value, 10);
+            const selectedIndex = Math.ceil(parseFloat(tilingSlider.value));;
             const selectedOption = tilingOptions[selectedIndex];
             if (selectedOption) {
                 tilingValue.textContent = selectedOption.tileSize;

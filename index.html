@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI图片放大</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="./libs/all.min.css">
     <link rel="stylesheet" href="style.css">
     <link rel="icon" type="image/png" href="64.png">
 </head>
@@ -16,7 +16,7 @@
                 <div class="logo-icon">
                     <img class="fas fa-robot icon" src="64.png" />
                 </div>
-                <h1>AI图像放大系统</h1>
+                <h1>AI图像放大</h1>
                 <span class="version-badge">V2.3</span>
             </div>
             <div class="status-card glass-card">
@@ -59,7 +59,8 @@
                     <div class="select-wrapper">
                         <select id="waifu2x-arch">
                             <option value="cunet">普通质量</option>
-                            <option value="swin_unet">专业质量</option>
+                            <option value="swin_unet" selected>专业质量</option>
+                            <option value="real_esrgan">超高质量 (60mb)</option>
                         </select>
                         <i class="fas fa-chevron-down"></i>
                     </div>
@@ -86,7 +87,7 @@
                         <select id="waifu2x-noise" class="form-select">
                             <option value="-1">无降噪</option> 
                             <option value="0">等级 0</option> 
-                            <option value="1">等级 1</option>
+                            <option value="1" selected>等级 1</option>
                             <option value="2">等级 2</option>
                             <option value="3">等级 3</option>
                         </select>
@@ -182,7 +183,7 @@
     </div>
     
     <!-- 引入 ONNX Runtime Web -->
-    <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/ort.min.js"></script>
+    <script src="./libs/ort.min.js"></script>
     <script src="main.js"></script>
 </body>
 </html>

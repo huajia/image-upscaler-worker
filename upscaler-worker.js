@@ -30,7 +30,10 @@ function gen_arch_config() {
     for (const domain of ["art", "art_scan", "photo"]) {
         var base_config = {
             ...swin[domain],
-            arch: "swin_unet", domain: domain, calc_tile_size: calc_tile_size_swin_unet
+            arch: "swin_unet", domain: domain, calc_tile_size: calc_tile_size_swin_unet,
+            input_name: 'x', 
+            output_name: 'y',
+            data_format: 'rgb'
         };
         swin[domain] = {
             scale2x: { ...base_config, scale: 2, offset: 16 },
@@ -55,6 +58,9 @@ function gen_arch_config() {
         arch: "cunet", domain: "art", calc_tile_size: calc_tile_size_cunet,
         color_stability: true,
         padding: "replication",
+        input_name: 'x', 
+        output_name: 'y',
+        data_format: 'rgb'
     };
     config["cunet"]["art"] = {
         scale2x: { ...base_config, scale: 2, offset: 36 },
@@ -65,6 +71,31 @@ function gen_arch_config() {
         base["art"]["noise" + i + "_scale2x"] = { ...base_config, scale: 2, offset: 36 };
         base["art"]["noise" + i] = { ...base_config, scale: 1, offset: 28 };
     }
+     config["real_esrgan"] = {
+        photo: {} // 使用 "photo" 作为占位符，因为我们的逻辑需要一个 style
+    };
+    const calc_tile_size_esrgan = function (tile_size, config) {
+        return tile_size;
+    };
+    var esrgan_base_config = {
+        arch: "real_esrgan",
+        domain: "photo", // 占位符
+        calc_tile_size: calc_tile_size_esrgan,
+        padding: "replication", // 复制边缘像素，是比较安全通用的填充方式
+        input_name: 'image', 
+        output_name: 'upscaled_image',
+        data_format: 'rgb',
+        tile_pad: 10
+    };
+
+    // 'x4plus' 将作为我们的 "method" 名称
+    config["real_esrgan"]["photo"]["x4plus"] = {
+        ...esrgan_base_config,
+        scale: 4,
+        path: 'https://r2.img.aigent.vip/x4.onnx' // 直接指定模型路径
+    };
+    // --- ▲▲▲ 新增配置结束 ▲▲▲ ---
+
     return config;
 }
 
@@ -72,9 +103,13 @@ const CONFIG = {
     arch: gen_arch_config(),
     get_config: function (arch, style, method) {
         if ((arch in this.arch) && (style in this.arch[arch]) && (method in this.arch[arch][style])) {
-            config = this.arch[arch][style][method];
-            // --- 调整路径 ---
-            config["path"] = `./models/waifu2x/${arch}/${style}/${method}.onnx`;
+            let config = this.arch[arch][style][method];
+            // --- ▼▼▼ 修改部分 ▼▼▼ ---
+            // 如果配置中没有直接提供路径，则按waifu2x的规则生成
+            if (!("path" in config)) {
+                config["path"] = `./models/waifu2x/${arch}/${style}/${method}.onnx`;
+            }
+            // --- ▲▲▲ 修改结束 ▲▲▲ ---
             return config;
         } else {
             return null;
@@ -351,28 +386,48 @@ const SeamBlending = class {
 };
 
 // --- 图像数据转换 (从 unlimited.waifu2x 复制并简化) ---
-function imageDataToFloat32(imageData) {
+function imageDataToFloat32(imageData, dataFormat = 'rgb') {
     const { data, width, height } = imageData;
     const float32Data = new Float32Array(3 * width * height);
     const planeSize = width * height;
+
+    const r_offset = 0;
+    const g_offset = 1;
+    const b_offset = 2;
+
     for (let i = 0; i < planeSize; i++) {
         const j = i * 4;
-        float32Data[i] = data[j] / 255.0;
-        float32Data[i + planeSize] = data[j + 1] / 255.0;
-        float32Data[i + 2 * planeSize] = data[j + 2] / 255.0;
-        // Alpha 通道被忽略
+        let r = data[j] / 255.0;
+        let g = data[j + 1] / 255.0;
+        let b = data[j + 2] / 255.0;
+
+        if (dataFormat === 'bgr') {
+            // 如果模型需要 BGR，我们交换 R 和 B
+            [r, b] = [b, r]; 
+        }
+
+        float32Data[i] = r;
+        float32Data[i + planeSize] = g;
+        float32Data[i + 2 * planeSize] = b;
     }
     return float32Data;
 }
 
-function float32ToImageData(float32Data, width, height) {
+function float32ToImageData(float32Data, width, height, dataFormat = 'rgb') {
     const count = width * height;
     const imageData = new ImageData(width, height);
-    const clamp = (value) => Math.max(0, Math.min(255, Math.round(value))); // 使用 round 更精确
+    const clamp = (value) => Math.max(0, Math.min(255, Math.round(value)));
+
     for (let i = 0; i < count; i++) {
-        const r = float32Data[i] * 255;
-        const g = float32Data[i + count] * 255;
-        const b = float32Data[i + 2 * count] * 255;
+        let r = float32Data[i] * 255;
+        let g = float32Data[i + count] * 255;
+        let b = float32Data[i + 2 * count] * 255;
+
+        if (dataFormat === 'bgr') {
+            // 如果模型输出是 BGR，我们把它换回 RGB 以便正确显示
+            [r, b] = [b, r];
+        }
+
         const idx = i * 4;
         imageData.data[idx] = clamp(r);
         imageData.data[idx + 1] = clamp(g);
@@ -419,44 +474,39 @@ async function padding(x, left, right, top, bottom, mode) {
 }
 
 // --- 获取任务列表 (从 unlimited.waifu2x 复制并简化) ---
-function getWaifu2xMethod(scale, noise_level) {
+function getModelMethod(arch, scale, noise_level) {
+    if (arch === 'real_esrgan') {
+        return scale == 4 ? "x4plus" : null; // 如果是4倍，则返回我们定义的方法名
+    }
+
+    // --- 以下是 waifu2x 的旧逻辑，保持不变 ---
     if (scale == 1) {
-        // 如果是1倍放大：
         if (noise_level == -1) {
-            // 1倍放大且无降噪，则不执行任何操作。
             return null;
         }
-        // 否则，直接返回对应的降噪模型名称，如 "noise0", "noise1" 等。
         return "noise" + noise_level;
 
     } else if (scale == 2) {
-        // 如果是2倍放大：
         if (noise_level == -1) {
-            // 无降噪，则使用纯放大模型 "scale2x"。
             return "scale2x";
         }
-        // 否则，使用带降噪的放大模型，如 "noise0_scale2x"。
         return "noise" + noise_level + "_scale2x";
 
     } else if (scale == 4) {
-        // 如果是4倍放大（仅适用于swin_unet）：
         if (noise_level == -1) {
-            // 无降噪，则使用纯放大模型 "scale4x"。
             return "scale4x";
         }
-        // 否则，使用带降噪的放大模型，如 "noise0_scale4x"。
         return "noise" + noise_level + "_scale4x";
     }
     
-    // 其他未覆盖的情况，不执行操作。
     return null;
 }
 
 // --- Worker 初始化 ---
 const MEMORY_LIMITS = [512, 1024, 2048, 4096]; // MB
 try {
-    self.importScripts("https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/ort.min.js");
-    ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/";
+    self.importScripts("./libs/ort.min.js");
+    ort.env.wasm.wasmPaths = "./";
     if (self.crossOriginIsolated) {
         ort.env.wasm.numThreads = navigator.hardwareConcurrency || 4;
     }
@@ -485,7 +535,7 @@ self.onmessage = async (event) => {
     }
 };
 
-// --- 主处理函数 (基于 unlimited.waifu2x 的 tiled_render) ---
+// 在 upscaler-worker.js 中
 async function upscaleImage(file, userConfig) {
     const sourceBitmap = await createImageBitmap(file);
     const { width: sourceWidth, height: sourceHeight } = sourceBitmap;
@@ -495,96 +545,139 @@ async function upscaleImage(file, userConfig) {
     const style = userConfig.waifu2x.style;
     const noise_level = parseInt(userConfig.waifu2x.noise, 10);
     const scale = parseInt(userConfig.waifu2x.scale, 10);
-    const user_tile_size = parseInt(userConfig.tiling.suggestedTileSize, 10);
+    let user_tile_size = parseInt(userConfig.tiling.suggestedTileSize, 10);
 
-    const method = getWaifu2xMethod(scale, noise_level);
+    const method = getModelMethod(arch, scale, noise_level);
     if (!method) {
         self.postMessage({ type: 'error', payload: { message: '无效的模型配置 (scale/noise)' } });
         return;
     }
 
-    const model_config = CONFIG.get_config(arch, style, method);
+    const effective_style = (arch === 'real_esrgan') ? 'photo' : style;
+    const model_config = CONFIG.get_config(arch, effective_style, method);
     if (!model_config) {
         self.postMessage({ type: 'error', payload: { message: `找不到模型配置: ${arch}.${style}.${method}` } });
         return;
     }
-
-    // 2. 计算实际 tile_size 和其他参数
-    const tile_size = model_config.calc_tile_size(user_tile_size, model_config);
-    self.postMessage({ type: 'status', payload: { message: `计算图块尺寸: ${user_tile_size} -> ${tile_size}` } });
     
-    // 3. 加载模型
+    // 2. 加载模型和预处理图像
     const model = await loadModel(model_config.path);
     const taskName = model_config.path.split('/').pop();
     self.postMessage({ type: 'status', payload: { message: `模型加载完成: ${taskName}` } });
 
-    // 4. 图像预处理
     const offscreenCanvas = new OffscreenCanvas(sourceWidth, sourceHeight);
     const ctx = offscreenCanvas.getContext('2d', { willReadFrequently: true });
     ctx.drawImage(sourceBitmap, 0, 0);
     const imageData = ctx.getImageData(0, 0, sourceWidth, sourceHeight);
-    let x_tensor = new ort.Tensor('float32', imageDataToFloat32(imageData), [1, 3, sourceHeight, sourceWidth]);
-    self.postMessage({ type: 'status', payload: { message: `图像预处理完成，宽: ${sourceWidth}，高：${sourceHeight}` } });
-    // 5. 初始化 SeamBlending
-    const seam_blending = new SeamBlending(x_tensor.dims, model_config.scale, model_config.offset, tile_size);
-    try {
-        await seam_blending.build();
-    } catch (buildError) {
-        throw buildError;
-    }
-    const p = seam_blending.get_rendering_config();
-    self.postMessage({ type: 'status', payload: { message: `开始发送图片给AI` } });
+    const x_tensor = new ort.Tensor('float32', imageDataToFloat32(imageData), [1, 3, sourceHeight, sourceWidth]);
+    
+    if (model_config.arch === 'real_esrgan') {
+        self.postMessage({ type: 'status', payload: { message: `使用固定128px切块策略` } });
+        
+        const TILE_SIZE = 128; // 模型严格要求的输入尺寸
+        const TILE_PAD = model_config.tile_pad; // 重叠区域
+        const STEP = TILE_SIZE - TILE_PAD * 2; // 每次迭代的有效步长
 
-    // 6. 对整个图像进行 Padding
-    x_tensor = await padding(x_tensor, BigInt(p.pad[0]), BigInt(p.pad[1]), BigInt(p.pad[2]), BigInt(p.pad[3]), model_config.padding);
-    self.postMessage({ type: 'status', payload: { message: `AI开始工作` } });
-    // 7. 图块处理循环
-    self.postMessage({ type: 'progress', payload: { progress: 0, tile: null, task: taskName } });
+        const cols = sourceWidth > STEP ? Math.ceil((sourceWidth - TILE_PAD * 2) / STEP) : 1;
+        const rows = sourceHeight > STEP ? Math.ceil((sourceHeight - TILE_PAD * 2) / STEP) : 1;
+        const total_tiles = cols * rows;
+        let processed_tiles = 0;
 
-    let tiles = [];
-    for (var h_i = 0; h_i < p.h_blocks; ++h_i) {
-        for (var w_i = 0; w_i < p.w_blocks; ++w_i) {
-            const i = h_i * p.input_tile_step;
-            const j = w_i * p.input_tile_step;
-            const ii = h_i * p.output_tile_step;
-            const jj = w_i * p.output_tile_step;
-            tiles.push([i, j, ii, jj, h_i, w_i]);
+        for (let y = 0; y < rows; y++) {
+            for (let x = 0; x < cols; x++) {
+                // 1. 计算当前 128x128 图块在原图中的起始坐标
+                const src_x_start = (x === 0) ? 0 : x * STEP - TILE_PAD;
+                const src_y_start = (y === 0) ? 0 : y * STEP - TILE_PAD;
+                
+                // 2. 手动创建并填充一个标准的 128x128 输入张量
+                const model_input_data = new Float32Array(3 * TILE_SIZE * TILE_SIZE);
+                for (let c = 0; c < 3; c++) {
+                    const src_channel_offset = c * sourceHeight * sourceWidth;
+                    const dst_channel_offset = c * TILE_SIZE * TILE_SIZE;
+                    for (let h = 0; h < TILE_SIZE; h++) {
+                        for (let w = 0; w < TILE_SIZE; w++) {
+                            // 找到源像素坐标，并用 clamp 的方式实现复制填充
+                            const src_h = Math.max(0, Math.min(src_y_start + h, sourceHeight - 1));
+                            const src_w = Math.max(0, Math.min(src_x_start + w, sourceWidth - 1));
+                            
+                            const src_index = src_channel_offset + src_h * sourceWidth + src_w;
+                            const dst_index = dst_channel_offset + h * TILE_SIZE + w;
+                            model_input_data[dst_index] = x_tensor.data[src_index];
+                        }
+                    }
+                }
+                const model_input_tensor = new ort.Tensor('float32', model_input_data, [1, 3, TILE_SIZE, TILE_SIZE]);
+
+                // 3. 模型推理
+                const tile_output = await model.run({ [model_config.input_name]: model_input_tensor });
+                const output_tensor = tile_output[model_config.output_name];
+
+                // 4. 从放大的结果中，裁剪出无重叠的有效区域
+                const crop_x_start = (x === 0) ? 0 : TILE_PAD * scale;
+                const crop_y_start = (y === 0) ? 0 : TILE_PAD * scale;
+
+                const crop_x_end = (x === cols - 1) ? TILE_SIZE * scale : (TILE_SIZE - TILE_PAD) * scale;
+                const crop_y_end = (y === rows - 1) ? TILE_SIZE * scale : (TILE_SIZE - TILE_PAD) * scale;
+                
+                const cropped_output_tensor = crop_tensor(output_tensor, crop_x_start, crop_y_start, crop_x_end - crop_x_start, crop_y_end - crop_y_start);
+                const tileImageData = float32ToImageData(cropped_output_tensor.data, cropped_output_tensor.dims[3], cropped_output_tensor.dims[2]);
+                
+                // 5. 计算拼接位置
+                const paste_x = (x === 0) ? 0 : (x * STEP - TILE_PAD + TILE_PAD) * scale;
+                const paste_y = (y === 0) ? 0 : (y * STEP - TILE_PAD + TILE_PAD) * scale;
+
+                self.postMessage({
+                    type: 'tile_done',
+                    payload: { data: tileImageData.data.buffer, width: tileImageData.width, height: tileImageData.height, dx: paste_x, dy: paste_y }
+                }, [tileImageData.data.buffer]);
+
+                processed_tiles++;
+                const progress = processed_tiles / total_tiles;
+                self.postMessage({ type: 'progress', payload: { progress: progress, tile: { col: x, row: y, cols: cols, rows: rows }, task: taskName } });
+            }
         }
-    }
-    if (tiles.length === 0) {
-        self.postMessage({ type: 'error', payload: { message: '计算出的图块数量为0，请检查图像尺寸或图块设置。' } });
-        return;
-    }
-
-    for (var k = 0; k < tiles.length; ++k) {
-        const [i, j, ii, jj, h_i, w_i] = tiles[k];
-        let tile_x = crop_tensor(x_tensor, j, i, tile_size, tile_size);
-        var tile_output = await model.run({ x: tile_x });
-        var tile_y = tile_output.y;
-        const blended_output = seam_blending.update(tile_y, h_i, w_i);
-        const blendedImageData = float32ToImageData(blended_output.data, blended_output.dims[2], blended_output.dims[1]);
-
-        self.postMessage({
-            type: 'tile_done',
-            payload: {
-                data: blendedImageData.data.buffer,
-                width: blendedImageData.width,
-                height: blendedImageData.height,
-                dx: jj,
-                dy: ii
+    } else {
+        // --- Waifu2x 的 SeamBlending 路径 (保持不变) ---
+        const tile_size = model_config.calc_tile_size(user_tile_size, model_config);
+        self.postMessage({ type: 'status', payload: { message: `Waifu2x 路径：使用 SeamBlending 策略` } });
+        const seam_blending = new SeamBlending(x_tensor.dims, model_config.scale, model_config.offset, tile_size);
+        await seam_blending.build();
+        const p = seam_blending.get_rendering_config();
+        const x_padded = await padding(x_tensor, BigInt(p.pad[0]), BigInt(p.pad[1]), BigInt(p.pad[2]), BigInt(p.pad[3]), model_config.padding);
+        
+        let tiles = [];
+        for (var h_i = 0; h_i < p.h_blocks; ++h_i) {
+            for (var w_i = 0; w_i < p.w_blocks; ++w_i) {
+                const i = h_i * p.input_tile_step;
+                const j = w_i * p.input_tile_step;
+                const ii = h_i * p.output_tile_step;
+                const jj = w_i * p.output_tile_step;
+                tiles.push([i, j, ii, jj, h_i, w_i]);
             }
-        }, [blendedImageData.data.buffer]);
+        }
+        if (tiles.length === 0) {
+            self.postMessage({ type: 'error', payload: { message: '计算出的图块数量为0，请检查图像尺寸或图块设置。' } });
+            return;
+        }
 
-        const progress = (k + 1) / tiles.length;
-        self.postMessage({
-            type: 'progress',
-            payload: {
-                progress: progress,
-                tile: { col: w_i, row: h_i, cols: p.w_blocks, rows: p.h_blocks },
-                task: taskName
-            }
-        });
+        for (var k = 0; k < tiles.length; ++k) {
+            const [i, j, ii, jj, h_i, w_i] = tiles[k];
+            let tile_x = crop_tensor(x_padded, j, i, tile_size, tile_size);
+            var tile_output = await model.run({ [model_config.input_name]: tile_x });
+            var tile_y = tile_output[model_config.output_name];
+            const blended_output = seam_blending.update(tile_y, h_i, w_i);
+            const blendedImageData = float32ToImageData(blended_output.data, blended_output.dims[2], blended_output.dims[1]);
+
+            self.postMessage({
+                type: 'tile_done',
+                payload: { data: blendedImageData.data.buffer, width: blendedImageData.width, height: blendedImageData.height, dx: jj, dy: ii }
+            }, [blendedImageData.data.buffer]);
+
+            const progress = (k + 1) / tiles.length;
+            self.postMessage({ type: 'progress', payload: { progress: progress, tile: { col: w_i, row: h_i, cols: p.w_blocks, rows: p.h_blocks }, task: taskName } });
+        }
     }
 
     self.postMessage({ type: 'all_done' });
 }
+
