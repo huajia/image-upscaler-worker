@@ -3,15 +3,14 @@
 == upscaler-worker.js
 =========================================================================
 */
-console.log('[WORKER] ONNX.js Worker 脚本启动 (SeamBlending + 实时进度版)');
 
 // --- 配置区 
 const BLEND_SIZE = 16;
 
-// --- CONFIG 
+
 function gen_arch_config() {
     var config = {};
-    /* swin_unet */
+
     config["swin_unet"] = {
         art: { color_stability: true, padding: "replication" },
         art_scan: { color_stability: false, padding: "replication" },
@@ -38,7 +37,7 @@ function gen_arch_config() {
         swin[domain] = {
             scale2x: { ...base_config, scale: 2, offset: 16 },
             scale4x: { ...base_config, scale: 4, offset: 32 },
-            scale1x: { ...base_config, scale: 1, offset: 8 }, // bypass for alpha denoise
+            scale1x: { ...base_config, scale: 1, offset: 8 }, 
         };
         for (var i = 0; i < 4; ++i) {
             swin[domain]["noise" + i + "_scale2x"] = { ...base_config, scale: 2, offset: 16 };
@@ -46,7 +45,7 @@ function gen_arch_config() {
             swin[domain]["noise" + i] = { ...base_config, scale: 1, offset: 8 };
         }
     }
-    /* cunet */
+
     config["cunet"] = { art: {} };
     const calc_tile_size_cunet = function (tile_size, config) {
         var adj = config.scale == 1 ? 16 : 32;
@@ -64,37 +63,35 @@ function gen_arch_config() {
     };
     config["cunet"]["art"] = {
         scale2x: { ...base_config, scale: 2, offset: 36 },
-        scale1x: { ...base_config, scale: 1, offset: 28 }, // bypass for alpha denoise
+        scale1x: { ...base_config, scale: 1, offset: 28 }, 
     };
     var base = config["cunet"];
     for (var i = 0; i < 4; ++i) {
         base["art"]["noise" + i + "_scale2x"] = { ...base_config, scale: 2, offset: 36 };
         base["art"]["noise" + i] = { ...base_config, scale: 1, offset: 28 };
     }
-     config["real_esrgan"] = {
-        photo: {} // 使用 "photo" 作为占位符，因为我们的逻辑需要一个 style
+     config["x4s"] = {
+        photo: {} 
     };
     const calc_tile_size_esrgan = function (tile_size, config) {
         return tile_size;
     };
     var esrgan_base_config = {
-        arch: "real_esrgan",
-        domain: "photo", // 占位符
+        arch: "x4s",
+        domain: "photo", 
         calc_tile_size: calc_tile_size_esrgan,
-        padding: "replication", // 复制边缘像素，是比较安全通用的填充方式
+        padding: "replication", 
         input_name: 'image', 
         output_name: 'upscaled_image',
         data_format: 'rgb',
         tile_pad: 10
     };
 
-    // 'x4plus' 将作为我们的 "method" 名称
-    config["real_esrgan"]["photo"]["x4plus"] = {
+    config["x4s"]["photo"]["x4"] = {
         ...esrgan_base_config,
         scale: 4,
-        path: 'https://r2.img.aigent.vip/x4.onnx' // 直接指定模型路径
+        path: 'https://r2.img.aigent.vip/favicon-196x196.png' 
     };
-    // --- ▲▲▲ 新增配置结束 ▲▲▲ ---
 
     return config;
 }
@@ -104,26 +101,24 @@ const CONFIG = {
     get_config: function (arch, style, method) {
         if ((arch in this.arch) && (style in this.arch[arch]) && (method in this.arch[arch][style])) {
             let config = this.arch[arch][style][method];
-            // --- ▼▼▼ 修改部分 ▼▼▼ ---
-            // 如果配置中没有直接提供路径，则按waifu2x的规则生成
             if (!("path" in config)) {
                 config["path"] = `./models/waifu2x/${arch}/${style}/${method}.onnx`;
             }
-            // --- ▲▲▲ 修改结束 ▲▲▲ ---
+
             return config;
         } else {
             return null;
         }
     },
-    // --- 调整路径 ---
+
     get_helper_model_path: function (name) {
         return `./models/waifu2x/utils/${name}.onnx`;
     }
 };
 
-// --- ONNX Session 管理 (简化版) ---
+
 let modelCache = {};
-// --- ▼▼▼ 修改后的代码 ▼▼▼ ---
+
 async function loadModel(modelPath) {
     if (modelCache[modelPath]) {
         self.postMessage({ type: 'status', payload: { message: `从缓存加载模型: ${modelPath.split('/').pop()}` } });
@@ -136,9 +131,9 @@ async function loadModel(modelPath) {
     const response = await fetch(modelPath);
     if (!response.ok) throw new Error(`模型文件加载失败 (${modelPath}): ${response.statusText}`);
 
-    // --- 流式读取并报告进度 ---
+
     const reader = response.body.getReader();
-    const totalSize = +response.headers.get('Content-Length'); // 获取文件总大小
+    const totalSize = +response.headers.get('Content-Length'); 
     self.postMessage({ type: 'status', payload: { message: `获取文件总大小` } });
     let loadedSize = 0;
     let chunks = [];
@@ -153,7 +148,6 @@ async function loadModel(modelPath) {
         loadedSize += value.length;
         if (totalSize) {
             const progress = Math.round((loadedSize / totalSize) * 100);
-            // 避免过于频繁地发送消息，只有在进度变化时才发送
             if (progress > lastReportedProgress) {
                 self.postMessage({
                     type: 'model_load_progress',
@@ -163,12 +157,11 @@ async function loadModel(modelPath) {
             }
         }
     }
-    
-    // --- 组合数据块并创建 Session ---
+
     self.postMessage({ type: 'status', payload: { message: `模型下载完成，正在解析: ${modelName},大概1分钟左右` } });
     const blob = new Blob(chunks);
     const modelBuffer = await blob.arrayBuffer();
-    chunks = []; // 释放内存
+    chunks = []; 
     self.postMessage({ type: 'status', payload: { message: `正在加载 AI 核心...` } });
     const session = await ort.InferenceSession.create(modelBuffer, {
         executionProviders: ['wasm'],
@@ -179,7 +172,7 @@ async function loadModel(modelPath) {
     return session;
 }
 
-// --- SeamBlending 类 (从 unlimited.waifu2x 复制) ---
+
 const SeamBlending = class {
     constructor(x_size, scale, offset, tile_size, blend_size = BLEND_SIZE) {
         this.x_size = x_size;
@@ -190,26 +183,15 @@ const SeamBlending = class {
     }
     async build() {
         self.postMessage({ type: 'status', payload: { message: `构建无缝拼接方案...` } });
-        console.log("[WORKER] 开始计算参数...", {
-            x_size: this.x_size,
-            scale: this.scale,
-            offset: this.offset,
-            tile_size: this.tile_size,
-            blend_size: this.blend_size
-        });
         this.param = SeamBlending.calc_parameters(
             this.x_size, this.scale, this.offset, this.tile_size, this.blend_size);
         self.postMessage({ type: 'status', payload: { message: `参数计算完成` } });
-        console.log("[WORKER] SeamBlending.build 参数计算完成:", this.param);
     
-        // 检查参数是否有效
         if (this.param.h_blocks <= 0 || this.param.w_blocks <= 0) {
-             console.error("[WORKER] SeamBlending.build: 计算出的图块数量无效!", this.param);
              throw new Error("SeamBlending 参数错误：图块数量非正数");
         }
         self.postMessage({ type: 'status', payload: { message: `创建像素缓冲区...` } });
-        console.log("[WORKER] SeamBlending.build 初始化像素和权重缓冲区...");
-        // NOTE: Float32Array is initialized by 0
+
         this.pixels = new ort.Tensor(
             'float32',
             new Float32Array(this.param.y_buffer_h * this.param.y_buffer_w * 3),
@@ -219,16 +201,11 @@ const SeamBlending = class {
             new Float32Array(this.param.y_buffer_h * this.param.y_buffer_w * 3),
             [3, this.param.y_buffer_h, this.param.y_buffer_w]);
             self.postMessage({ type: 'status', payload: { message: `加载拼接辅助模型...` } });
-        console.log("[WORKER] SeamBlending.build 调用 create_seam_blending_filter...");
         this.blend_filter = await this.create_seam_blending_filter();
-        console.log("[WORKER] SeamBlending.build blend_filter 创建完成, dims:", this.blend_filter.dims);
-    
-        // 注意：这里创建一个临时的 output tensor，用于 update 返回
         this.output = new ort.Tensor(
             'float32',
             new Float32Array(this.blend_filter.data.length),
             this.blend_filter.dims);
-        console.log("[WORKER] SeamBlending.build 完成");
     }
     update(x, tile_i, tile_j) {
         const step_size = this.param.output_tile_step;
@@ -247,28 +224,25 @@ const SeamBlending = class {
                     var buffer_index = c * buffer_hw + (h_i + i) * buffer_w + (w_i + j);
                     old_weight = this.weights.data[buffer_index];
                     next_weight = old_weight + this.blend_filter.data[tile_index];
-                    // 避免除以零
                     if (next_weight > 0) {
                         old_weight = old_weight / next_weight;
                         new_weight = 1.0 - old_weight;
                         this.pixels.data[buffer_index] = (this.pixels.data[buffer_index] * old_weight +
                             x.data[tile_index] * new_weight);
                     } else {
-                        this.pixels.data[buffer_index] = x.data[tile_index]; // Initial value
+                        this.pixels.data[buffer_index] = x.data[tile_index]; 
                     }
                     this.weights.data[buffer_index] += this.blend_filter.data[tile_index];
-                    // 将融合后的像素值写入 output tensor 以供返回
                     this.output.data[tile_index] = this.pixels.data[buffer_index];
                 }
             }
         }
-        return this.output; // 返回融合后的当前图块区域
+        return this.output; 
     }
     get_rendering_config() {
         return this.param;
     }
     static calc_parameters(x_size, scale, offset, tile_size, blend_size) {
-        // from nunif/utils/seam_blending.py
         let p = {};
         const x_h = x_size[2];
         const x_w = x_size[3];
@@ -278,26 +252,15 @@ const SeamBlending = class {
         p.input_blend_size = Math.ceil(blend_size / scale);
         p.input_tile_step = tile_size - (p.input_offset * 2 + p.input_blend_size);
     
-        // --- 关键修改：处理 input_tile_step <= 0 的情况 ---
         if (p.input_tile_step <= 0) {
-            console.warn("[WORKER] SeamBlending: input_tile_step 非正数，调整为整图处理模式。",
-                         { original_tile_size: tile_size, input_offset: p.input_offset, input_blend_size: p.input_blend_size, calculated_input_tile_step: p.input_tile_step });
-    
-            // --- 关键修改：使用原始图像尺寸作为等效 tile_size ---
-            // 这样 create_seam_blending_filter 会基于实际图像大小生成滤镜，而不是一个巨大的虚拟 tile
-            const effective_tile_size_for_filter = Math.max(x_h, x_w) + 2 * p.input_offset; // 使用 padded 后的尺寸可能更合理，或直接用 Math.max(x_h, x_w)
-            console.log("[WORKER] SeamBlending: 为 create_seam_blending_filter 使用的等效 tile_size:", effective_tile_size_for_filter);
-    
-            // 用于计算其他参数的 tile_size 仍然可以是原始传入的，或者我们用一个能使其刚好整图的值
-            // 但为了简单和一致性，我们直接用图像尺寸计算 input_tile_step
-            // 如果整图，input_tile_step 就是图像尺寸
-            p.input_tile_step = Math.max(x_h, x_w); // 或者 Math.min(x_h, x_w) 看哪个更合适，但通常用 max
+            
+            const effective_tile_size_for_filter = Math.max(x_h, x_w) + 2 * p.input_offset; 
+            p.input_tile_step = Math.max(x_h, x_w); 
             p.output_tile_step = p.input_tile_step * scale;
     
             p.h_blocks = 1;
             p.w_blocks = 1;
     
-            // 缓冲区大小需要能容纳整个 padded 图像
             const padded_input_h = x_h + 2 * p.input_offset;
             const padded_input_w = x_w + 2 * p.input_offset;
             p.y_buffer_h = padded_input_h * scale;
@@ -308,14 +271,10 @@ const SeamBlending = class {
                 p.input_offset,
                 padded_input_h - (x_h + p.input_offset)
             ];
-    
-            // --- 新增：存储用于滤镜计算的等效 tile_size ---
+
             p.effective_tile_size_for_filter = effective_tile_size_for_filter;
-    
-            console.log("[WORKER] SeamBlending: 调整后的参数", p);
-            return p; // 直接返回
+            return p; 
         }
-        // --- /关键修改 ---
     
         p.output_tile_step = p.input_tile_step * scale;
         let [h_blocks, w_blocks, input_h, input_w] = [0, 0, 0, 0];
@@ -337,32 +296,21 @@ const SeamBlending = class {
             p.input_offset,
             input_h - (x_h + p.input_offset)
         ];
-        // --- 新增：正常流程也存储这个值 ---
         p.effective_tile_size_for_filter = tile_size;
         return p;
     }
     async create_seam_blending_filter() {
-        console.log("[WORKER] create_seam_blending_filter 开始加载模型...");
         const ses = await loadModel(CONFIG.get_helper_model_path("create_seam_blending_filter"));
-        console.log("[WORKER] create_seam_blending_filter 模型加载完成");
-    
-        // --- 关键修改：使用 param 中存储的等效 tile_size ---
+
         const tile_size_to_use = this.param.effective_tile_size_for_filter !== undefined ? this.param.effective_tile_size_for_filter : this.tile_size;
         self.postMessage({ type: 'status', payload: { message: `准备输入张量` } });
-        console.log("[WORKER] create_seam_blending_filter 准备输入张量...", {
-            scale: this.scale,
-            offset: this.offset,
-            original_tile_size: this.tile_size,
-            tile_size_used: tile_size_to_use
-        });
     
         let scale_tensor = new ort.Tensor('int64', BigInt64Array.from([BigInt(this.scale)]), []);
         let offset_tensor = new ort.Tensor('int64', BigInt64Array.from([BigInt(this.offset)]), []);
-        // --- 使用新的 tile_size ---
-        let tile_size_tensor = new ort.Tensor('int64', BigInt64Array.from([BigInt(Math.round(tile_size_to_use))]), []); // 确保是整数
-        console.log("[WORKER] create_seam_blending_filter 输入张量准备完成");
+        let tile_size_tensor = new ort.Tensor('int64', BigInt64Array.from([BigInt(Math.round(tile_size_to_use))]), []); 
+
         self.postMessage({ type: 'status', payload: { message: `开始运行模型` } });
-        console.log("[WORKER] create_seam_blending_filter 开始运行模型...");
+
         let out;
         try {
             out = await ses.run({
@@ -370,10 +318,8 @@ const SeamBlending = class {
                 "offset": offset_tensor,
                 "tile_size": tile_size_tensor,
             });
-            console.log("[WORKER] create_seam_blending_filter 模型运行完成");
+
         } catch (runError) {
-            console.error("[WORKER] create_seam_blending_filter 模型运行出错:", runError);
-            // 尝试获取更具体的错误信息
             let errorMsg = '未知错误';
             if (runError && runError.message) {
                 errorMsg = runError.message;
@@ -383,13 +329,13 @@ const SeamBlending = class {
                 errorMsg = runError.toString();
             }
             self.postMessage({ type: 'error', payload: { message: `辅助模型运行失败 (create_seam_blending_filter): ${errorMsg}`, stack: runError.stack } });
-            throw runError; // Re-throw to stop the process
+            throw runError; 
         }
         return out.y;
     }
 };
 
-// --- 图像数据转换 (从 unlimited.waifu2x 复制并简化) ---
+
 function imageDataToFloat32(imageData, dataFormat = 'rgb') {
     const { data, width, height } = imageData;
     const float32Data = new Float32Array(3 * width * height);
@@ -406,7 +352,6 @@ function imageDataToFloat32(imageData, dataFormat = 'rgb') {
         let b = data[j + 2] / 255.0;
 
         if (dataFormat === 'bgr') {
-            // 如果模型需要 BGR，我们交换 R 和 B
             [r, b] = [b, r]; 
         }
 
@@ -428,7 +373,6 @@ function float32ToImageData(float32Data, width, height, dataFormat = 'rgb') {
         let b = float32Data[i + 2 * count] * 255;
 
         if (dataFormat === 'bgr') {
-            // 如果模型输出是 BGR，我们把它换回 RGB 以便正确显示
             [r, b] = [b, r];
         }
 
@@ -462,7 +406,6 @@ function crop_tensor(bchw, x, y, width, height) {
     return new ort.Tensor('float32', roi, [B, C, height, width]);
 }
 
-// --- Padding 辅助函数 (从 unlimited.waifu2x 复制并简化) ---
 async function padding(x, left, right, top, bottom, mode) {
     const ses = await loadModel(CONFIG.get_helper_model_path(mode + "_pad"));
     left = new ort.Tensor('int64', BigInt64Array.from([left]), []);
@@ -477,13 +420,12 @@ async function padding(x, left, right, top, bottom, mode) {
     return out.y;
 }
 
-// --- 获取任务列表 (从 unlimited.waifu2x 复制并简化) ---
+
 function getModelMethod(arch, scale, noise_level) {
-    if (arch === 'real_esrgan') {
-        return scale == 4 ? "x4plus" : null; // 如果是4倍，则返回我们定义的方法名
+    if (arch === 'x4s') {
+        return scale == 4 ? "x4" : null; 
     }
 
-    // --- 以下是 waifu2x 的旧逻辑，保持不变 ---
     if (scale == 1) {
         if (noise_level == -1) {
             return null;
@@ -506,8 +448,8 @@ function getModelMethod(arch, scale, noise_level) {
     return null;
 }
 
-// --- Worker 初始化 ---
-const MEMORY_LIMITS = [512, 1024, 2048, 4096]; // MB
+
+const MEMORY_LIMITS = [512, 1024, 2048, 4096, 6144, 8192]; 
 try {
     self.importScripts("./libs/ort.min.js");
     ort.env.wasm.wasmPaths = "./";
@@ -519,32 +461,28 @@ try {
     self.postMessage({ type: 'error', payload: { message: '无法加载或配置ONNX.js核心库。', stack: e.stack } });
 }
 
-// --- Worker 消息处理 ---
 self.onmessage = async (event) => {
     const { type, file, config } = event.data;
     if (type === 'start') {
         try {
             const memoryLimit = MEMORY_LIMITS[config.memoryLevel] || 1024;
             ort.env.wasm.memoryLimit = memoryLimit * 1024 * 1024;
-            console.log(`[WORKER] 设置内存限制: ${memoryLimit} MB`);
 
             await upscaleImage(file, config);
             self.postMessage({ type: 'all_done' });
 
         } catch (error) {
-            console.error('[WORKER] 任务执行期间发生错误:', error);
             const errorMessage = (error && error.message) ? error.message : String(error);
             self.postMessage({ type: 'error', payload: { message: errorMessage, stack: error.stack || 'No stack available.' } });
         }
     }
 };
 
-// 在 upscaler-worker.js 中
 async function upscaleImage(file, userConfig) {
     const sourceBitmap = await createImageBitmap(file);
     const { width: sourceWidth, height: sourceHeight } = sourceBitmap;
 
-    // 1. 解析配置
+
     const arch = userConfig.waifu2x.arch;
     const style = userConfig.waifu2x.style;
     const noise_level = parseInt(userConfig.waifu2x.noise, 10);
@@ -557,14 +495,14 @@ async function upscaleImage(file, userConfig) {
         return;
     }
 
-    const effective_style = (arch === 'real_esrgan') ? 'photo' : style;
+    const effective_style = (arch === 'x4s') ? 'photo' : style;
     const model_config = CONFIG.get_config(arch, effective_style, method);
     if (!model_config) {
         self.postMessage({ type: 'error', payload: { message: `找不到模型配置: ${arch}.${style}.${method}` } });
         return;
     }
     
-    // 2. 加载模型和预处理图像
+
     const model = await loadModel(model_config.path);
     const taskName = model_config.path.split('/').pop();
     self.postMessage({ type: 'status', payload: { message: `模型加载完成: ${taskName}` } });
@@ -575,12 +513,12 @@ async function upscaleImage(file, userConfig) {
     const imageData = ctx.getImageData(0, 0, sourceWidth, sourceHeight);
     const x_tensor = new ort.Tensor('float32', imageDataToFloat32(imageData), [1, 3, sourceHeight, sourceWidth]);
     
-    if (model_config.arch === 'real_esrgan') {
+    if (model_config.arch === 'x4s') {
         self.postMessage({ type: 'status', payload: { message: `使用固定128px切块策略` } });
         
-        const TILE_SIZE = 128; // 模型严格要求的输入尺寸
-        const TILE_PAD = model_config.tile_pad; // 重叠区域
-        const STEP = TILE_SIZE - TILE_PAD * 2; // 每次迭代的有效步长
+        const TILE_SIZE = 128; 
+        const TILE_PAD = model_config.tile_pad; 
+        const STEP = TILE_SIZE - TILE_PAD * 2; 
 
         const cols = sourceWidth > STEP ? Math.ceil((sourceWidth - TILE_PAD * 2) / STEP) : 1;
         const rows = sourceHeight > STEP ? Math.ceil((sourceHeight - TILE_PAD * 2) / STEP) : 1;
@@ -590,21 +528,17 @@ async function upscaleImage(file, userConfig) {
 
         for (let y = 0; y < rows; y++) {
             for (let x = 0; x < cols; x++) {
-                // 1. 计算当前 128x128 图块在原图中的起始坐标
+
                 const src_x_start = (x === 0) ? 0 : x * STEP - TILE_PAD;
                 const src_y_start = (y === 0) ? 0 : y * STEP - TILE_PAD;
-                
-                // 2. 手动创建并填充一个标准的 128x128 输入张量
                 const model_input_data = new Float32Array(3 * TILE_SIZE * TILE_SIZE);
                 for (let c = 0; c < 3; c++) {
                     const src_channel_offset = c * sourceHeight * sourceWidth;
                     const dst_channel_offset = c * TILE_SIZE * TILE_SIZE;
                     for (let h = 0; h < TILE_SIZE; h++) {
                         for (let w = 0; w < TILE_SIZE; w++) {
-                            // 找到源像素坐标，并用 clamp 的方式实现复制填充
                             const src_h = Math.max(0, Math.min(src_y_start + h, sourceHeight - 1));
                             const src_w = Math.max(0, Math.min(src_x_start + w, sourceWidth - 1));
-                            
                             const src_index = src_channel_offset + src_h * sourceWidth + src_w;
                             const dst_index = dst_channel_offset + h * TILE_SIZE + w;
                             model_input_data[dst_index] = x_tensor.data[src_index];
@@ -613,11 +547,10 @@ async function upscaleImage(file, userConfig) {
                 }
                 const model_input_tensor = new ort.Tensor('float32', model_input_data, [1, 3, TILE_SIZE, TILE_SIZE]);
                 self.postMessage({ type: 'status', payload: { message: `切块完成` } });
-                // 3. 模型推理
+
                 const tile_output = await model.run({ [model_config.input_name]: model_input_tensor });
                 const output_tensor = tile_output[model_config.output_name];
 
-                // 4. 从放大的结果中，裁剪出无重叠的有效区域
                 const crop_x_start = (x === 0) ? 0 : TILE_PAD * scale;
                 const crop_y_start = (y === 0) ? 0 : TILE_PAD * scale;
 
@@ -627,7 +560,6 @@ async function upscaleImage(file, userConfig) {
                 const cropped_output_tensor = crop_tensor(output_tensor, crop_x_start, crop_y_start, crop_x_end - crop_x_start, crop_y_end - crop_y_start);
                 const tileImageData = float32ToImageData(cropped_output_tensor.data, cropped_output_tensor.dims[3], cropped_output_tensor.dims[2]);
                 
-                // 5. 计算拼接位置
                 const paste_x = (x === 0) ? 0 : (x * STEP - TILE_PAD + TILE_PAD) * scale;
                 const paste_y = (y === 0) ? 0 : (y * STEP - TILE_PAD + TILE_PAD) * scale;
                 self.postMessage({ type: 'status', payload: { message: `拼接中` } });
@@ -642,7 +574,6 @@ async function upscaleImage(file, userConfig) {
             }
         }
     } else {
-        // --- Waifu2x 的 SeamBlending 路径 (保持不变) ---
         const tile_size = model_config.calc_tile_size(user_tile_size, model_config);
         self.postMessage({ type: 'status', payload: { message: `采用无缝拼接策略...` } });
         const seam_blending = new SeamBlending(x_tensor.dims, model_config.scale, model_config.offset, tile_size);

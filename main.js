@@ -1,9 +1,4 @@
-document.addEventListener('DOMContentLoaded', () => {
-    console.log("AI图像放大系统 (V3.0 Final) 已加载");
-    
-    //=================================================================
-    // ▼▼▼ 插件接口 (保持不变) ▼▼▼
-    //=================================================================
+document.addEventListener('DOMContentLoaded', () => { 
     function dataURLtoFile(dataurl, filename) {
         let arr = dataurl.split(','),
             mime = arr[0].match(/:(.*?);/)[1],
@@ -233,11 +228,9 @@ document.addEventListener('DOMContentLoaded', () => {
         originalImage.style.width = `${width}px`;
         originalImage.style.height = `${height}px`;
 
-        // 设置 canvas 元素的显示尺寸
         resultCanvas.style.width = `${width}px`;
         resultCanvas.style.height = `${height}px`;
 
-        // 同时设置它们父容器的尺寸，以帮助外层滚动和居中
         const originalBox = document.getElementById('originalImageBox');
         const resultBox = document.getElementById('resultBox');
         if (originalBox) {
@@ -245,14 +238,10 @@ document.addEventListener('DOMContentLoaded', () => {
             originalBox.style.height = `${height}px`;
         }
         if (resultBox) {
-            resultBox.style.width = `${width}px`; // resultBox的宽度由滑块控制，但高度需要设置
+            resultBox.style.width = `${width}px`; 
             resultBox.style.height = `${height}px`;
         }
     }
-    //=================================================================
-    // ▼▼▼ 后期处理与预设逻辑 ▼▼▼
-    //=================================================================
-
     function initializePostProcessControls() {
         postProcessCard.style.display = 'block';
         resultAspectRatio = resultCanvas.height / resultCanvas.width;
@@ -304,11 +293,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    //=================================================================
-    // ▼▼▼ 事件监听器 ▼▼▼
-    //=================================================================
-
-    // 上传区域事件
     uploadArea.addEventListener('click', () => fileInput.click());
     fileInput.addEventListener('change', (event) => {
         if (event.target.files[0]) handleImageUpload(event.target.files[0]);
@@ -328,7 +312,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (e.dataTransfer.files[0]) handleImageUpload(e.dataTransfer.files[0]);
     });
 
-    // 操作按钮事件
     executeBtn.addEventListener('click', executeUpscale);
     downloadBtn.addEventListener('click', () => {
         if (!resultCanvas || resultCanvas.width === 0) return;
@@ -354,7 +337,7 @@ document.addEventListener('DOMContentLoaded', () => {
         link.click();
     });
 
-    // 设置控件事件
+
     waifu2xArch.addEventListener('change', toggleWaifu2xOptions);
     tilingSlider.addEventListener('input', updateTilingInfoText);
     memorySlider.addEventListener('input', () => {
@@ -369,7 +352,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
     
-    // 后期处理控件事件
     presetButtons.forEach(button => {
         button.addEventListener('click', () => {
             const type = button.dataset.type;
@@ -394,7 +376,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // 对比滑块事件
     let isDragging = false;
     comparisonHandle.addEventListener('mousedown', () => { isDragging = true; });
     window.addEventListener('mouseup', () => { isDragging = false; });
@@ -407,9 +388,7 @@ document.addEventListener('DOMContentLoaded', () => {
         comparisonHandle.style.left = `${position * 100}%`;
     });
 
-    //=================================================================
-    // ▼▼▼ 辅助函数 (保持不变) ▼▼▼
-    //=================================================================
+
     function drawTileToCanvas(payload) {
         const { data, width, height, dx, dy } = payload;
         const ctx = resultCanvas.getContext('2d');
@@ -487,7 +466,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (arch === 'swin_unet') {
             styleSelect.disabled = false; noiseSelect.disabled = false;
             scaleOptions['1'].disabled = false; scaleOptions['2'].disabled = false; scaleOptions['4'].disabled = false;
-        } else if (arch === 'real_esrgan') {
+        } else if (arch === 'x4s') {
             styleSelect.disabled = true; noiseSelect.disabled = true;
             scaleSelect.value = '4';
             scaleOptions['1'].disabled = true; scaleOptions['2'].disabled = true; scaleOptions['4'].disabled = false;
@@ -553,9 +532,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    //=================================================================
-    // ▼▼▼ 页面初始化 ▼▼▼
-    //=================================================================
     loadSettings();
     initializeWorker();
     toggleWaifu2xOptions();
