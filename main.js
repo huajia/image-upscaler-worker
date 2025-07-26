@@ -1,68 +1,45 @@
 document.addEventListener('DOMContentLoaded', () => {
-    console.log("AI图像放大系统 (智能分割版) 已加载");
-    // =================================================================
-// ▼▼▼▼▼ main.js插件接口：接收来自Chrome插件的图片数据 ▼▼▼▼▼
-// =================================================================
-
-/**
- * 将 dataURL (base64) 转换为 File 对象
- * @param {string} dataurl - 图片的 dataURL
- * @param {string} filename - 要创建的文件名
- * @returns {File} - 转换后的 File 对象
- */
-function dataURLtoFile(dataurl, filename) {
-    let arr = dataurl.split(','),
-        // 从 dataURL 头部获取 MIME 类型，例如 "image/png"
-        mime = arr[0].match(/:(.*?);/)[1],
-        // 解码 base64 数据
-        bstr = atob(arr[1]),
-        n = bstr.length,
-        u8arr = new Uint8Array(n);
-    while (n--) {
-        u8arr[n] = bstr.charCodeAt(n);
-    }
-    return new File([u8arr], filename, {type: mime});
-}
-
-// 监听由Chrome插件派发的 'aiUpscalerInjectData' 自定义事件
-window.addEventListener('aiUpscalerInjectData', (event) => {
-    console.log('成功接收到来自AI图像放大插件的数据！', event.detail);
+    console.log("AI图像放大系统 (V3.0 Final) 已加载");
     
-    // 确保事件的 detail 中包含 imageDataUrl
-    if (event.detail && event.detail.imageDataUrl) {
-        const imageDataUrl = event.detail.imageDataUrl;
-        
-        // 生成一个动态的文件名
-        const fileExtension = imageDataUrl.substring("data:image/".length, imageDataUrl.indexOf(";base64"));
-        const fileName = `from_extension_${Date.now()}.${fileExtension || 'png'}`;
-        
-        // 将 dataURL 转换为 File 对象
-        const imageFile = dataURLtoFile(imageDataUrl, fileName);
-
-        // 调用应用中已有的图片处理函数，就像用户手动上传了一样
-        handleImageUpload(imageFile);
-
-        // （可选）更新状态，给用户一个明确的反馈
-        const statusDiv = document.getElementById('status');
-        if(statusDiv) {
-            statusDiv.innerHTML = '<i class="fas fa-check-circle"></i> 图片已从插件成功载入！';
+    //=================================================================
+    // ▼▼▼ 插件接口 (保持不变) ▼▼▼
+    //=================================================================
+    function dataURLtoFile(dataurl, filename) {
+        let arr = dataurl.split(','),
+            mime = arr[0].match(/:(.*?);/)[1],
+            bstr = atob(arr[1]),
+            n = bstr.length,
+            u8arr = new Uint8Array(n);
+        while (n--) {
+            u8arr[n] = bstr.charCodeAt(n);
         }
-    } else {
-        console.error('从插件接收到的数据格式不正确。');
+        return new File([u8arr], filename, {type: mime});
     }
-});
 
-// =================================================================
-// ▲▲▲▲▲ 插件接口：代码结束 ▲▲▲▲▲
-// =================================================================
-    // DOM元素
+    window.addEventListener('aiUpscalerInjectData', (event) => {
+        if (event.detail && event.detail.imageDataUrl) {
+            const imageDataUrl = event.detail.imageDataUrl;
+            const fileExtension = imageDataUrl.substring("data:image/".length, imageDataUrl.indexOf(";base64"));
+            const fileName = `from_extension_${Date.now()}.${fileExtension || 'png'}`;
+            const imageFile = dataURLtoFile(imageDataUrl, fileName);
+            handleImageUpload(imageFile);
+            const statusDiv = document.getElementById('status');
+            if(statusDiv) {
+                statusDiv.innerHTML = '<i class="fas fa-check-circle"></i> 图片已从插件成功载入！';
+            }
+        } else {
+            console.error('从插件接收到的数据格式不正确。');
+        }
+    });
+
+    //=================================================================
+    // ▼▼▼ DOM元素获取 ▼▼▼
+    //=================================================================
     const fileInput = document.getElementById('fileInput');
     const uploadArea = document.getElementById('uploadArea');
     const statusDiv = document.getElementById('status');
-    const originalImageBox = document.getElementById('originalImageBox');
     const originalImage = document.getElementById('originalImage');
     const originalInfo = document.getElementById('originalInfo');
-    const resultContainer = document.getElementById('resultContainer');
     const resultCanvas = document.getElementById('resultCanvas');
     const resultInfo = document.getElementById('resultInfo');
     const executeBtn = document.getElementById('executeBtn');
@@ -76,20 +53,33 @@ window.addEventListener('aiUpscalerInjectData', (event) => {
     const progressBar = document.getElementById('progressBar');
     const progressText = document.getElementById('progressText');
     const previewOverlay = document.getElementById('previewOverlay');
-
     const tilingSlider = document.getElementById('tilingSlider');
     const tilingValue = document.getElementById('tilingValue');
     const tilingInfo = document.getElementById('tilingInfo');
-
     const memoryOptions = document.querySelectorAll('.memory-option');
+    const postProcessCard = document.getElementById('postProcessCard');
+    const targetWidthInput = document.getElementById('targetWidthInput');
+    const sizeSlider = document.getElementById('sizeSlider');
+    const targetDimensions = document.getElementById('targetDimensions');
+    const presetButtons = document.querySelectorAll('.preset-btn');
+    const comparisonContainer = document.getElementById('comparison-container');
+    const resultBox = document.getElementById('resultBox');
+    const comparisonHandle = document.getElementById('comparison-handle');
+    const imageWrapper = document.getElementById('image-wrapper');
+
+    //=================================================================
+    // ▼▼▼ 全局状态变量 ▼▼▼
+    //=================================================================
     const MEMORY_OPTIONS = [0.5, 1.0, 2.0, 4.0];
     let originalFile = null;
+    let originalImageDimensions = { width: 0, height: 0 };
     let upscalerWorker;
-    let currentTiles = [];
     let tilingOptions = [];
-    
-    // ★ 核心修改 1: 新增一个状态标志
-    let isGridPrepared = false;
+    let resultAspectRatio = 1;
+
+    //=================================================================
+    // ▼▼▼ 核心函数区 ▼▼▼
+    //=================================================================
 
     function initializeWorker() {
         if (typeof(Worker) === "undefined") {
@@ -106,16 +96,7 @@ window.addEventListener('aiUpscalerInjectData', (event) => {
                 stack: e.stack || 'No stack available.'
             };
             handleWorkerMessage({ data: { type: 'error', payload } });
-        }
-    }
-
-    function handleModelLoadProgress(payload) {
-        const { progress, modelName } = payload;
-        progressBar.style.width = `${progress}%`;
-        progressText.textContent = `${progress}%`;
-        const statusMessage = `<i class="fas fa-download"></i> 正在下载AI模型 ${modelName}... ${progress}%`;
-        statusDiv.innerHTML = statusMessage;
-        previewOverlay.textContent = `下载模型: ${modelName} (${progress}%)`;
+        };
     }
 
     function handleWorkerMessage(event) {
@@ -123,42 +104,39 @@ window.addEventListener('aiUpscalerInjectData', (event) => {
         switch (type) {
             case 'status':
                 statusDiv.innerHTML = `<i class="fas fa-info-circle"></i> ${payload.message}`;
-                // 只有在模型加载相关消息时才更新遮罩层
                 if (payload.message.includes('加载') || payload.message.includes('下载') || payload.message.includes('解析')) {
                     previewOverlay.textContent = payload.message;
                 }
                 break;
-    
-            // --- ▼▼▼ 新增 case ▼▼▼ ---
             case 'model_load_progress':
-                handleModelLoadProgress(payload);
+                const { progress, modelName } = payload;
+                progressBar.style.width = `${progress}%`;
+                progressText.textContent = `${progress}%`;
+                statusDiv.innerHTML = `<i class="fas fa-download"></i> 正在下载AI模型 ${modelName}... ${progress}%`;
+                previewOverlay.textContent = `下载模型: ${modelName} (${progress}%)`;
                 break;
-            // --- ▲▲▲ 新增 case 结束 ▲▲▲ ---
-
             case 'progress':
-                // 重置进度条样式，为处理进度做准备
                 progressBar.style.transition = 'width 0.1s ease-in-out';
                 updateProgress(payload.progress, payload.tile, payload.task);
                 break;
-    
             case 'tile_done':
                 drawTileToCanvas(payload);
                 break;
-    
             case 'all_done':
-                statusDiv.innerHTML = '<i class="fas fa-check-circle"></i> 处理完成！可以下载图片。';
+                resultCanvas.style.backgroundColor = 'transparent';
+                statusDiv.innerHTML = '<i class="fas fa-check-circle"></i> 处理完成！请调整最终尺寸并下载。';
                 previewOverlay.textContent = "处理完成！";
                 downloadBtn.style.display = 'flex';
+                initializePostProcessControls();
                 enableControls();
                 break;
-                
             case 'error':
+                resultCanvas.style.backgroundColor = 'transparent';
                 console.error("Worker Error:", payload);
                 let friendlyMessage = payload.message;
-                // 检查是否是输入形状错误
                 if (payload.message.includes('Invalid input shape: {2,2}')) {
                     friendlyMessage = '分割粒度/图片太小，请调整分割大小或确保图片足够大';
-                } 
+                }
                 if (payload.stack === 'No stack available.' && !isNaN(parseInt(payload.message))) {
                     friendlyMessage = '分割大小超出处理能力';
                 }
@@ -169,71 +147,53 @@ window.addEventListener('aiUpscalerInjectData', (event) => {
         }
     }
 
-
-    function drawTileToCanvas(payload) {
-        const { data, width, height, dx, dy } = payload;
-        const ctx = resultCanvas.getContext('2d');
-        const imageData = new ImageData(new Uint8ClampedArray(data), width, height);
-        ctx.putImageData(imageData, dx, dy);
-    }
-    
-    function updateProgress(progress, tile, task) {
-        const percentage = Math.round(progress * 100);
-        progressBar.style.width = `${percentage}%`;
-        progressText.textContent = `${percentage}%`;
-        previewOverlay.textContent = `处理中: ${task} (${percentage}%)`;
-        if (tile && currentTiles.length > 0) {
-            const { col, row, cols, rows } = tile;
-            const tileIndex = row * cols + col;
-            if (tileIndex < currentTiles.length) {
-                document.querySelectorAll('.tile-cell.active').forEach(cell => cell.classList.remove('active'));
-                currentTiles[tileIndex].classList.add('active');
-            }
-        }
-    }
     function handleImageUpload(file) {
         if (!file) return;
         originalFile = file;
-        
+        postProcessCard.style.display = 'none';
+
         const reader = new FileReader();
         reader.onload = (e) => {
-            const imageDataUrl = e.target.result;
             const img = new Image();
-            
             img.onload = () => {
+                originalImageDimensions = { width: img.naturalWidth, height: img.naturalHeight };
                 const fileSizeMB = (file.size / 1024 / 1024).toFixed(2);
-                originalInfo.textContent = `${img.width}×${img.height} • ${fileSizeMB} MB`;
-                
-                updateTilingOptions(img.naturalWidth, img.naturalHeight);
 
-                originalImage.src = imageDataUrl;
-                resultContainer.style.display = 'none';
-                downloadBtn.style.display = 'none';
-                originalImageBox.style.display = 'flex';
+                originalInfo.textContent = `原始(右): ${originalImageDimensions.width}×${originalImageDimensions.height}`;
+                resultInfo.textContent = '放大后(左): 0×0';
+                
+                updateTilingOptions(originalImageDimensions.width, originalImageDimensions.height);
+                updateTilingInfoText();
+
+                originalImage.src = e.target.result;
+                setPreviewElementsSize(originalImageDimensions.width, originalImageDimensions.height);
+                resultCanvas.width = originalImageDimensions.width;
+                resultCanvas.height = originalImageDimensions.height;
+                const ctx = resultCanvas.getContext('2d');
+                ctx.clearRect(0, 0, resultCanvas.width, resultCanvas.height);
                 executeBtn.style.display = 'flex';
                 statusDiv.innerHTML = '<i class="fas fa-image"></i> 图片已加载，点击 "开始处理"';
                 previewOverlay.textContent = "图片已加载";
+                resetComparisonSlider();
                 enableControls();
             };
-            img.src = imageDataUrl;
+            img.src = e.target.result;
         };
         reader.readAsDataURL(file);
     }
-    
+
     function executeUpscale() {
         if (!originalFile || tilingOptions.length === 0) {
             alert('请先上传图片并等待分割方案计算完成！');
             return;
         }
-        currentTiles = [];
-    
+        saveSettings();
+        postProcessCard.style.display = 'none';
         disableControls();
-        const selectedTiling = tilingOptions[tilingSlider.value];
-        const suggestedTileSize = Math.max(...selectedTiling.tileSize.split('×').map(Number));
-    
+
         const config = {
             tiling: {
-                suggestedTileSize: suggestedTileSize,
+                suggestedTileSize: Math.max(...tilingOptions[tilingSlider.value].tileSize.split('×').map(Number)),
             },
             waifu2x: { 
                 arch: waifu2xArch.value, 
@@ -250,229 +210,158 @@ window.addEventListener('aiUpscalerInjectData', (event) => {
         
         const tasks = getWaifu2xTasks(config.waifu2x);
         let effectiveScale = 1;
-        tasks.forEach(task => {
-            effectiveScale *= task.scale;
-        });
+        tasks.forEach(task => { effectiveScale *= task.scale; });
         
-        const targetWidth = Math.round(originalImage.naturalWidth * effectiveScale);
-        const targetHeight = Math.round(originalImage.naturalHeight * effectiveScale);
+        const targetWidth = Math.round(originalImageDimensions.width * effectiveScale);
+        const targetHeight = Math.round(originalImageDimensions.height * effectiveScale);
     
         resultCanvas.width = targetWidth;
         resultCanvas.height = targetHeight;
-        resultContainer.style.display = 'flex';
+        setPreviewElementsSize(originalImageDimensions.width, originalImageDimensions.height);
         const ctx = resultCanvas.getContext('2d');
         ctx.clearRect(0, 0, targetWidth, targetHeight);
-        resultInfo.textContent = `${targetWidth}×${targetHeight} • ${(targetWidth * targetHeight / 1000000).toFixed(2)} MP`;
+        resultCanvas.style.backgroundColor = '#48484848';
+
+        resultInfo.textContent = `放大后(左): ${targetWidth}×${targetHeight}`;
         statusDiv.innerHTML = '<i class="fas fa-paper-plane"></i> 任务已发送...';
         previewOverlay.textContent = "准备处理...";
         
         upscalerWorker.postMessage({ type: 'start', file: originalFile, config: config });
     }
-    
-    // in main.js
-function getWaifu2xTasks(waifuConfig) {
-    const { arch, style, noise, scale } = waifuConfig;
-    
-    // ★ 修改这里：将判断条件从 '0' 改为 '-1'
-    if (scale === 1 && noise === '-1') return []; // 1倍放大且无降噪，则任务列表为空
-    
-    const isCunet = arch === 'cunet';
-    const effectiveStyle = isCunet ? 'art' : style;
-    const basePath = `./models/waifu2x/${arch}/${effectiveStyle}/`;
-    
-    let tasks = [];
-    
-    // ★ 修改这里：处理仅降噪的情况 (scale=1)
-    if (noise !== '-1') { // 如果选择了任何一个降噪等级
-        if (scale === 1) {
-             // 如果是1倍放大，则添加一个降噪任务
-             tasks.push({ modelPath: `${basePath}noise${noise}.onnx`, scale: 1 });
+    function setPreviewElementsSize(width, height) {
+        // 设置 img 元素的显示尺寸
+        originalImage.style.width = `${width}px`;
+        originalImage.style.height = `${height}px`;
+
+        // 设置 canvas 元素的显示尺寸
+        resultCanvas.style.width = `${width}px`;
+        resultCanvas.style.height = `${height}px`;
+
+        // 同时设置它们父容器的尺寸，以帮助外层滚动和居中
+        const originalBox = document.getElementById('originalImageBox');
+        const resultBox = document.getElementById('resultBox');
+        if (originalBox) {
+            originalBox.style.width = `${width}px`;
+            originalBox.style.height = `${height}px`;
         }
+        if (resultBox) {
+            resultBox.style.width = `${width}px`; // resultBox的宽度由滑块控制，但高度需要设置
+            resultBox.style.height = `${height}px`;
+        }
+    }
+    //=================================================================
+    // ▼▼▼ 后期处理与预设逻辑 ▼▼▼
+    //=================================================================
+
+    function initializePostProcessControls() {
+        postProcessCard.style.display = 'block';
+        resultAspectRatio = resultCanvas.height / resultCanvas.width;
+        
+        const minWidth = Math.round(originalImageDimensions.width * 0.1);
+        const maxWidth = resultCanvas.width;
+        sizeSlider.min = minWidth;
+        sizeSlider.max = maxWidth;
+        
+        syncControls(maxWidth);
     }
 
-    if (scale > 1) {
-        if (isCunet) {
-            // ★ 修改这里：判断条件从 '0' 改为 '-1'
-            let modelName = (noise === '-1') ? `scale2x.onnx` : `noise${noise}_scale2x.onnx`;
-            tasks.push({ modelPath: basePath + modelName, scale: 2 });
-        } else { // swin_unet
-            // ★ 修改这里：判断条件从 '0' 改为 '-1'
-             if (noise === '-1') {
-                // 仅放大
-                tasks.push({ modelPath: `${basePath}scale${scale}x.onnx`, scale: scale });
-             } else {
-                // 降噪 + 放大（根据您的文件结构，这通常是一个组合模型）
-                tasks.push({ modelPath: `${basePath}noise${noise}_scale${scale}x.onnx`, scale: scale });
-             }
-        }
+    function syncControls(newWidth) {
+        const width = Math.max(1, Math.round(newWidth));
+        targetWidthInput.value = width;
+        sizeSlider.value = width;
+        updateTargetDimensionsDisplay(width);
+        updateActivePresetButton(width);
     }
-    return tasks;
-}
-    
-    function disableControls() {
-        uploadArea.style.pointerEvents = 'none';
-        uploadArea.style.opacity = 0.6;
-        executeBtn.disabled = true;
-        document.querySelectorAll('.settings-card select, .settings-card input').forEach(el => el.disabled = true);
+
+    function updateTargetDimensionsDisplay(width) {
+        const height = Math.round(width * resultAspectRatio);
+        targetDimensions.textContent = `${width} × ${height}`;
     }
-    function enableControls() {
-        uploadArea.style.pointerEvents = 'auto';
-        uploadArea.style.opacity = 1;
-        executeBtn.disabled = false;
-        document.querySelectorAll('.settings-card select, .settings-card input').forEach(el => el.disabled = false);
-        tilingSlider.disabled = tilingOptions.length <= 1;
-        toggleWaifu2xOptions();
-    }
-    
-    function toggleWaifu2xOptions() {
-        const arch = waifu2xArch.value;
-        const scaleSelect = waifu2xScale;
-        const styleSelect = waifu2xStyle;
-        const noiseSelect = waifu2xNoise; // 新增，方便控制
-        const scaleOptions = {
-            '1': document.querySelector('#waifu2x-scale option[value="1"]'),
-            '2': document.querySelector('#waifu2x-scale option[value="2"]'),
-            '4': document.querySelector('#waifu2x-scale option[value="4"]'),
-        };
-    
-        if (arch === 'cunet') {
-            styleSelect.value = 'art';
-            styleSelect.disabled = true;
-            noiseSelect.disabled = false; // 启用降噪
-    
-            scaleOptions['1'].disabled = false;
-            scaleOptions['2'].disabled = false;
-            scaleOptions['4'].disabled = true;
-            
-            if (scaleSelect.value === '4') {
-                scaleSelect.value = '2';
+
+    function updateActivePresetButton(currentWidth) {
+        let activeButton = null;
+        presetButtons.forEach(btn => {
+            const type = btn.dataset.type;
+            const value = parseFloat(btn.dataset.value);
+            let targetWidth = 0;
+
+            if (type === 'scale') {
+                targetWidth = Math.round(originalImageDimensions.width * value);
+            } else if (type === 'original_percent') {
+                targetWidth = Math.round(originalImageDimensions.width * value);
+            } else if (type === 'pixel') {
+                targetWidth = value;
             }
-        } else if (arch === 'swin_unet') {
-            styleSelect.disabled = false;
-            noiseSelect.disabled = false; // 启用降噪
-            scaleOptions['1'].disabled = false;
-            scaleOptions['2'].disabled = false;
-            scaleOptions['4'].disabled = false;
-        // --- ▼▼▼ 新增的逻辑分支 ▼▼▼ ---
-        } else if (arch === 'real_esrgan') {
-            // Real-ESRGAN 模型是通用的，没有风格和降噪级别选项
-            styleSelect.disabled = true;
-            noiseSelect.disabled = true;
-            
-            // Real-ESRGAN-x4plus 是固定的4倍放大
-            scaleSelect.value = '4';
-            scaleOptions['1'].disabled = true;
-            scaleOptions['2'].disabled = true;
-            scaleOptions['4'].disabled = false; // 只允许4倍
-        // --- ▲▲▲ 新增逻辑结束 ▲▲▲ ---
-        }
-    }
 
-    function updateTilingOptions(width, height) {
-        const MIN_TILE_SIZE = 16;
-        const MAX_TILE_SIZE = 640;
-        let options = new Map();
-
-        const sizesToTry = [28,32, 64, 96, 128, 192, 256, 384, 512]; 
-
-        for (const size of sizesToTry) {
-            const cols = Math.max(1, Math.round(width / size));
-            const rows = Math.max(1, Math.round(height / size));
-            
-            const tileW = Math.ceil(width / cols);
-            const tileH = Math.ceil(height / rows);
-
-            if (tileW >= MIN_TILE_SIZE && tileH >= MIN_TILE_SIZE && 
-                tileW <= MAX_TILE_SIZE && tileH <= MAX_TILE_SIZE)
-            {
-                const key = `${cols}x${rows}`;
-                if (!options.has(key)) {
-                    options.set(key, { 
-                        cols, 
-                        rows, 
-                        tileSize: `${tileW}×${tileH}` 
-                    });
-                }
+            if (currentWidth === targetWidth) {
+                activeButton = btn;
             }
-        }
-        
-        if (!options.has('1x1')) {
-            options.set('1x1', { cols: 1, rows: 1, tileSize: `${width}×${height}` });
-        }
-        
-        tilingOptions = Array.from(options.values()).sort((a, b) => (b.cols * b.rows) - (a.cols * b.rows));
-        
-        let defaultIndex = tilingOptions.findIndex(opt => {
-             const [w, h] = opt.tileSize.split('×').map(Number);
-             return w >= 30 && h >= 30;
         });
-        if (defaultIndex === -1) defaultIndex = 0;
-
-        tilingSlider.disabled = tilingOptions.length <= 1;
-        tilingSlider.max = tilingOptions.length - 1;
-        tilingSlider.value = defaultIndex;
-        updateTilingInfoText();
-    }
-
-    function updateTilingInfoText() {
-        if (tilingOptions.length > 0) {
-            const selectedIndex = Math.ceil(parseFloat(tilingSlider.value));;
-            const selectedOption = tilingOptions[selectedIndex];
-            if (selectedOption) {
-                tilingValue.textContent = selectedOption.tileSize;
-                const totalTiles = selectedOption.cols * selectedOption.rows;
-                tilingInfo.textContent = `将分割成 ${totalTiles} 块`;
-            }
-        } else {
-            tilingValue.textContent = '自动';
-            tilingInfo.textContent = '上传图片后将自动计算分割方案。';
+        
+        presetButtons.forEach(btn => btn.classList.remove('active'));
+        if (activeButton) {
+            activeButton.classList.add('active');
         }
     }
-    
-    tilingSlider.addEventListener('input', updateTilingInfoText);
+
+    //=================================================================
+    // ▼▼▼ 事件监听器 ▼▼▼
+    //=================================================================
+
+    // 上传区域事件
     uploadArea.addEventListener('click', () => fileInput.click());
     fileInput.addEventListener('change', (event) => {
         if (event.target.files[0]) handleImageUpload(event.target.files[0]);
     });
-    
-    ['dragover', 'drop'].forEach(eventName => {
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
         uploadArea.addEventListener(eventName, e => {
             e.preventDefault();
             e.stopPropagation();
+            if (eventName === 'dragenter' || eventName === 'dragover') {
+                uploadArea.classList.add('dragging');
+            } else {
+                uploadArea.classList.remove('dragging');
+            }
         });
     });
-    
-    uploadArea.addEventListener('dragenter', () => uploadArea.classList.add('dragging'));
-    uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('dragging'));
-    
     uploadArea.addEventListener('drop', (e) => {
-        uploadArea.classList.remove('dragging');
         if (e.dataTransfer.files[0]) handleImageUpload(e.dataTransfer.files[0]);
     });
-    
+
+    // 操作按钮事件
     executeBtn.addEventListener('click', executeUpscale);
-    
-    waifu2xArch.addEventListener('change', toggleWaifu2xOptions);
-    
     downloadBtn.addEventListener('click', () => {
         if (!resultCanvas || resultCanvas.width === 0) return;
+        const targetWidth = parseInt(targetWidthInput.value, 10);
+        if (isNaN(targetWidth) || targetWidth <= 0) {
+            alert('请输入一个有效的目标宽度！');
+            return;
+        }
+
+        const targetHeight = Math.round(targetWidth * resultAspectRatio);
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = targetWidth;
+        tempCanvas.height = targetHeight;
+        const tempCtx = tempCanvas.getContext('2d');
+        tempCtx.imageSmoothingQuality = 'high';
+        
+        tempCtx.drawImage(resultCanvas, 0, 0, targetWidth, targetHeight);
+
         const link = document.createElement('a');
-        link.href = resultCanvas.toDataURL('image/png');
-        const fileName = originalFile ? 
-            originalFile.name.split('.').slice(0, -1).join('.') : 'enhanced';
-        const scale = document.getElementById('waifu2x-scale').value;
-        link.download = `${fileName}_waifu2x_${scale}x_${waifu2xArch.value}.png`;
+        link.href = tempCanvas.toDataURL('image/png');
+        const fileName = originalFile ? originalFile.name.split('.').slice(0, -1).join('.') : 'enhanced';
+        link.download = `${fileName}_w${targetWidth}.png`;
         link.click();
     });
-    
+
+    // 设置控件事件
+    waifu2xArch.addEventListener('change', toggleWaifu2xOptions);
+    tilingSlider.addEventListener('input', updateTilingInfoText);
     memorySlider.addEventListener('input', () => {
         const level = parseInt(memorySlider.value, 10);
         memoryValue.textContent = `${MEMORY_OPTIONS[level]} GB`;
-        memoryOptions.forEach((option, index) => {
-            option.classList.toggle('active', index === level);
-        });
+        memoryOptions.forEach((option, index) => option.classList.toggle('active', index === level));
     });
-    
     memoryOptions.forEach((option, index) => {
         option.addEventListener('click', () => {
             memorySlider.value = index;
@@ -480,7 +369,196 @@ function getWaifu2xTasks(waifuConfig) {
         });
     });
     
+    // 后期处理控件事件
+    presetButtons.forEach(button => {
+        button.addEventListener('click', () => {
+            const type = button.dataset.type;
+            const value = parseFloat(button.dataset.value);
+            let newWidth = 0;
+
+            if (type === 'scale') {
+                newWidth = Math.round(originalImageDimensions.width * value);
+            } else if (type === 'original_percent') {
+                newWidth = Math.round(originalImageDimensions.width * value);
+            } else if (type === 'pixel') {
+                newWidth = value;
+            }
+            syncControls(newWidth);
+        });
+    });
+    sizeSlider.addEventListener('input', (e) => syncControls(parseInt(e.target.value, 10)));
+    targetWidthInput.addEventListener('input', (e) => {
+        const val = parseInt(e.target.value, 10);
+        if (!isNaN(val)) {
+            syncControls(val);
+        }
+    });
+
+    // 对比滑块事件
+    let isDragging = false;
+    comparisonHandle.addEventListener('mousedown', () => { isDragging = true; });
+    window.addEventListener('mouseup', () => { isDragging = false; });
+    window.addEventListener('mousemove', (e) => {
+        if (!isDragging) return;
+        const rect = comparisonContainer.getBoundingClientRect();
+        let position = (e.clientX - rect.left) / rect.width;
+        position = Math.max(0, Math.min(1, position));
+        resultBox.style.width = `${position * 100}%`;
+        comparisonHandle.style.left = `${position * 100}%`;
+    });
+
+    //=================================================================
+    // ▼▼▼ 辅助函数 (保持不变) ▼▼▼
+    //=================================================================
+    function drawTileToCanvas(payload) {
+        const { data, width, height, dx, dy } = payload;
+        const ctx = resultCanvas.getContext('2d');
+        const imageData = new ImageData(new Uint8ClampedArray(data), width, height);
+        ctx.putImageData(imageData, dx, dy);
+    }
+    function updateProgress(progress, tile, task) {
+        const percentage = Math.round(progress * 100);
+        progressBar.style.width = `${percentage}%`;
+        progressText.textContent = `${percentage}%`;
+        previewOverlay.textContent = `处理中: ${task} (${percentage}%)`;
+    }
+    function resetComparisonSlider() {
+        requestAnimationFrame(() => {
+            resultBox.style.width = '50%';
+            comparisonHandle.style.left = '50%';
+        });
+    }
+    function getWaifu2xTasks(waifuConfig) {
+        const { arch, style, noise, scale } = waifuConfig;
+        if (scale === 1 && noise === '-1') return [];
+        const isCunet = arch === 'cunet';
+        const effectiveStyle = isCunet ? 'art' : style;
+        const basePath = `./models/waifu2x/${arch}/${effectiveStyle}/`;
+        let tasks = [];
+        if (noise !== '-1') {
+            if (scale === 1) {
+                 tasks.push({ modelPath: `${basePath}noise${noise}.onnx`, scale: 1 });
+            }
+        }
+        if (scale > 1) {
+            let modelName;
+            if (isCunet) {
+                modelName = (noise === '-1') ? `scale2x.onnx` : `noise${noise}_scale2x.onnx`;
+                tasks.push({ modelPath: basePath + modelName, scale: 2 });
+            } else {
+                 if (noise === '-1') {
+                    tasks.push({ modelPath: `${basePath}scale${scale}x.onnx`, scale: scale });
+                 } else {
+                    tasks.push({ modelPath: `${basePath}noise${noise}_scale${scale}x.onnx`, scale: scale });
+                 }
+            }
+        }
+        return tasks;
+    }
+    function disableControls() {
+        uploadArea.style.pointerEvents = 'none';
+        uploadArea.style.opacity = 0.6;
+        executeBtn.disabled = true;
+        document.querySelectorAll('.settings-card select, .settings-card input, .post-process-controls button, .post-process-controls input').forEach(el => el.disabled = true);
+    }
+    function enableControls() {
+        uploadArea.style.pointerEvents = 'auto';
+        uploadArea.style.opacity = 1;
+        executeBtn.disabled = false;
+        document.querySelectorAll('.settings-card select, .settings-card input, .post-process-controls button, .post-process-controls input').forEach(el => el.disabled = false);
+        tilingSlider.disabled = tilingOptions.length <= 1;
+        toggleWaifu2xOptions();
+    }
+    function toggleWaifu2xOptions() {
+        const arch = waifu2xArch.value;
+        const scaleSelect = waifu2xScale;
+        const styleSelect = waifu2xStyle;
+        const noiseSelect = waifu2xNoise;
+        const scaleOptions = {
+            '1': document.querySelector('#waifu2x-scale option[value="1"]'),
+            '2': document.querySelector('#waifu2x-scale option[value="2"]'),
+            '4': document.querySelector('#waifu2x-scale option[value="4"]'),
+        };
+        if (arch === 'cunet') {
+            styleSelect.value = 'art'; styleSelect.disabled = true;
+            noiseSelect.disabled = false;
+            scaleOptions['1'].disabled = false; scaleOptions['2'].disabled = false; scaleOptions['4'].disabled = true;
+            if (scaleSelect.value === '4') { scaleSelect.value = '2'; }
+        } else if (arch === 'swin_unet') {
+            styleSelect.disabled = false; noiseSelect.disabled = false;
+            scaleOptions['1'].disabled = false; scaleOptions['2'].disabled = false; scaleOptions['4'].disabled = false;
+        } else if (arch === 'real_esrgan') {
+            styleSelect.disabled = true; noiseSelect.disabled = true;
+            scaleSelect.value = '4';
+            scaleOptions['1'].disabled = true; scaleOptions['2'].disabled = true; scaleOptions['4'].disabled = false;
+        }
+    }
+    function saveSettings() {
+        const settings = {
+            arch: waifu2xArch.value, style: waifu2xStyle.value, noise: waifu2xNoise.value,
+            scale: waifu2xScale.value, memory: memorySlider.value,
+        };
+        localStorage.setItem('userUpscalerSettings', JSON.stringify(settings));
+    }
+    function loadSettings() {
+        const savedSettings = localStorage.getItem('userUpscalerSettings');
+        if (savedSettings) {
+            const settings = JSON.parse(savedSettings);
+            waifu2xArch.value = settings.arch || 'swin_unet';
+            waifu2xStyle.value = settings.style || 'photo';
+            waifu2xNoise.value = settings.noise || '1';
+            waifu2xScale.value = settings.scale || '2';
+            memorySlider.value = settings.memory || '1';
+        }
+    }
+    function updateTilingOptions(width, height) {
+        const MIN_TILE_SIZE = 16;
+        const MAX_TILE_SIZE = 640;
+        let options = new Map();
+        const sizesToTry = [28,32, 64, 96, 128, 192, 256, 384, 512]; 
+        for (const size of sizesToTry) {
+            const cols = Math.max(1, Math.round(width / size));
+            const rows = Math.max(1, Math.round(height / size));
+            const tileW = Math.ceil(width / cols);
+            const tileH = Math.ceil(height / rows);
+            if (tileW >= MIN_TILE_SIZE && tileH >= MIN_TILE_SIZE && tileW <= MAX_TILE_SIZE && tileH <= MAX_TILE_SIZE) {
+                const key = `${cols}x${rows}`;
+                if (!options.has(key)) {
+                    options.set(key, { cols, rows, tileSize: `${tileW}×${tileH}` });
+                }
+            }
+        }
+        if (!options.has('1x1')) {
+            options.set('1x1', { cols: 1, rows: 1, tileSize: `${width}×${height}` });
+        }
+        tilingOptions = Array.from(options.values()).sort((a, b) => (b.cols * b.rows) - (a.cols * a.rows));
+        let defaultIndex = tilingOptions.findIndex(opt => {
+             const [w, h] = opt.tileSize.split('×').map(Number);
+             return w >= 30 && h >= 30;
+        });
+        if (defaultIndex === -1) defaultIndex = 0;
+        tilingSlider.max = tilingOptions.length - 1;
+        tilingSlider.value = defaultIndex;
+    }
+    function updateTilingInfoText() {
+        if (tilingOptions.length > 0) {
+            const selectedOption = tilingOptions[tilingSlider.value];
+            if (selectedOption) {
+                tilingValue.textContent = selectedOption.tileSize;
+                tilingInfo.textContent = `将分割成 ${selectedOption.cols * selectedOption.rows} 块`;
+            }
+        } else {
+            tilingValue.textContent = '自动';
+            tilingInfo.textContent = '上传图片后将自动计算分割方案。';
+        }
+    }
+
+    //=================================================================
+    // ▼▼▼ 页面初始化 ▼▼▼
+    //=================================================================
+    loadSettings();
     initializeWorker();
     toggleWaifu2xOptions();
     memorySlider.dispatchEvent(new Event('input'));
+    
 });

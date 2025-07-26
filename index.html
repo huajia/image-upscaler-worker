@@ -12,6 +12,44 @@
     <div class="app-container">
         
         <div class="controls-panel glass-card">
+            <div id="postProcessCard" class="settings-card glass-card" style="display: none;">
+                <div class="settings-header">
+                    <i class="fas fa-crop-alt"></i>
+                    <h2>最终尺寸调整</h2>
+                </div>
+                
+                <div class="post-process-controls">
+                    <div class="form-group">
+                        <label for="targetWidthInput">
+                            <i class="fas fa-arrows-alt-h"></i> 目标尺寸
+                            <span id="targetDimensions" class="value-badge">0 × 0</span>
+                        </label>
+                        <input type="range" id="sizeSlider" min="100" max="160000" value="1920">
+                    </div>
+    
+                    <div class="form-group">
+                        <label>
+                            <i class="fas fa-magic"></i> 快速预设
+                        </label>
+                        <div class="preset-buttons">
+                        <button class="preset-btn" data-type="scale" data-value="2">2倍</button>
+                        <button class="preset-btn" data-type="scale" data-value="4">4倍</button>
+                        <button class="preset-btn" data-type="original_percent" data-value="1">1倍</button>
+                        <button class="preset-btn" data-type="original_percent" data-value="0.5">0.5倍</button>
+                        <button class="preset-btn" data-type="pixel" data-value="800">800px</button>
+                        <button class="preset-btn" data-type="pixel" data-value="1920">1920px</button>
+                    </div>
+                    </div>
+    
+                    <div class="form-group">
+                         <label for="targetWidthInput" class="precise-label">
+                            <i class="fas fa-keyboard"></i> 精确宽度
+                        </label>
+                        <input type="number" id="targetWidthInput" class="form-control-custom">
+                    </div>
+                </div>
+            </div>
+
             <div class="app-header">
                 <div class="logo-icon">
                     <img class="fas fa-robot icon" src="64.png" />
@@ -153,24 +191,44 @@
         </div>
         
         <div class="display-panel">
-            <div class="image-card glass-card" style="height:50%;">
-                <div class="card-header">
-                    <h2><i class="fas fa-image"></i> 原始图片<small>建议大于36px*36px</small></h2>
-                    <span class="image-info" id="originalInfo">0×0 • 0 MB</span>
-                </div>
-                <div class="image-container" id="originalImageBox" style="display: none;">
-                    <img id="originalImage" alt="原始图片">
-                </div>
-            </div>
-            
             <div class="image-card glass-card">
                 <div class="card-header">
-                    <h2><i class="fas fa-magic"></i> 放大结果</h2>
-                    <span class="image-info" id="resultInfo">0×0 • 0 MP</span>
+                    <h2><i class="fas fa-images"></i> 效果对比</h2>
+                    <div class="image-info-group">
+                        <span class="image-info" id="resultInfo">放大后(左): 0×0</span>
+                        <span class="image-info" id="originalInfo">原始(右): 0×0</span>
+                        
+                    </div>
                 </div>
-                <div class="image-container" id="resultContainer" style="display: none;">
+        
+                <!-- 外层容器：负责居中和滚动 -->
+                <div id="comparison-container" class="comparison-container">
+        
+                    <!-- ▼▼▼ 核心：图片交互的“舞台” ▼▼▼ -->
+                    <div id="image-wrapper" class="image-wrapper">
+        
+                        <!-- 底层：原始图片 -->
+                        <div id="originalImageBox" class="comparison-item">
+                            <img id="originalImage" alt="原始图片" src="64.png">
+                        </div>
+            
+                        <!-- 顶层：AI处理结果 -->
+                        <div id="resultBox" class="comparison-item comparison-result">
+                            <canvas id="resultCanvas"></canvas>
+                        </div>
+            
+                        <!-- 滑块手柄，现在相对于“舞台”定位 -->
+                        <div id="comparison-handle" class="comparison-handle">
+                            <div class="handle-line"></div>
+                            <div class="handle-icon"><i class="fas fa-arrows-alt-h"></i></div>
+                            <div class="handle-line"></div>
+                        </div>
+        
+                    </div>
+                    <!-- ▲▲▲ “舞台”结束 ▲▲▲ -->
+                    
+                    <!-- 进度和状态遮罩层，覆盖在最上层 -->
                     <div class="preview-container">
-                        <canvas id="resultCanvas"></canvas>
                         <div class="preview-overlay" id="previewOverlay">准备就绪</div>
                         <div class="progress-container">
                             <div class="progress-bar" id="progressBar"></div>

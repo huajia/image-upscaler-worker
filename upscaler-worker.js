@@ -139,6 +139,7 @@ async function loadModel(modelPath) {
     // --- 流式读取并报告进度 ---
     const reader = response.body.getReader();
     const totalSize = +response.headers.get('Content-Length'); // 获取文件总大小
+    self.postMessage({ type: 'status', payload: { message: `获取文件总大小` } });
     let loadedSize = 0;
     let chunks = [];
     let lastReportedProgress = -1;
@@ -164,16 +165,16 @@ async function loadModel(modelPath) {
     }
     
     // --- 组合数据块并创建 Session ---
-    self.postMessage({ type: 'status', payload: { message: `模型下载完成，正在解析: ${modelName}` } });
+    self.postMessage({ type: 'status', payload: { message: `模型下载完成，正在解析: ${modelName},大概1分钟左右` } });
     const blob = new Blob(chunks);
     const modelBuffer = await blob.arrayBuffer();
     chunks = []; // 释放内存
-
+    self.postMessage({ type: 'status', payload: { message: `正在加载 AI 核心...` } });
     const session = await ort.InferenceSession.create(modelBuffer, {
         executionProviders: ['wasm'],
         graphOptimizationLevel: 'all'
     });
-
+    self.postMessage({ type: 'status', payload: { message: `汇编指令加载完成` } });
     modelCache[modelPath] = session;
     return session;
 }
@@ -188,7 +189,8 @@ const SeamBlending = class {
         this.blend_size = blend_size;
     }
     async build() {
-        console.log("[WORKER] SeamBlending.build 开始计算参数...", {
+        self.postMessage({ type: 'status', payload: { message: `构建无缝拼接方案...` } });
+        console.log("[WORKER] 开始计算参数...", {
             x_size: this.x_size,
             scale: this.scale,
             offset: this.offset,
@@ -197,6 +199,7 @@ const SeamBlending = class {
         });
         this.param = SeamBlending.calc_parameters(
             this.x_size, this.scale, this.offset, this.tile_size, this.blend_size);
+        self.postMessage({ type: 'status', payload: { message: `参数计算完成` } });
         console.log("[WORKER] SeamBlending.build 参数计算完成:", this.param);
     
         // 检查参数是否有效
@@ -204,7 +207,7 @@ const SeamBlending = class {
              console.error("[WORKER] SeamBlending.build: 计算出的图块数量无效!", this.param);
              throw new Error("SeamBlending 参数错误：图块数量非正数");
         }
-    
+        self.postMessage({ type: 'status', payload: { message: `创建像素缓冲区...` } });
         console.log("[WORKER] SeamBlending.build 初始化像素和权重缓冲区...");
         // NOTE: Float32Array is initialized by 0
         this.pixels = new ort.Tensor(
@@ -215,7 +218,7 @@ const SeamBlending = class {
             'float32',
             new Float32Array(this.param.y_buffer_h * this.param.y_buffer_w * 3),
             [3, this.param.y_buffer_h, this.param.y_buffer_w]);
-    
+            self.postMessage({ type: 'status', payload: { message: `加载拼接辅助模型...` } });
         console.log("[WORKER] SeamBlending.build 调用 create_seam_blending_filter...");
         this.blend_filter = await this.create_seam_blending_filter();
         console.log("[WORKER] SeamBlending.build blend_filter 创建完成, dims:", this.blend_filter.dims);
@@ -345,6 +348,7 @@ const SeamBlending = class {
     
         // --- 关键修改：使用 param 中存储的等效 tile_size ---
         const tile_size_to_use = this.param.effective_tile_size_for_filter !== undefined ? this.param.effective_tile_size_for_filter : this.tile_size;
+        self.postMessage({ type: 'status', payload: { message: `准备输入张量` } });
         console.log("[WORKER] create_seam_blending_filter 准备输入张量...", {
             scale: this.scale,
             offset: this.offset,
@@ -357,7 +361,7 @@ const SeamBlending = class {
         // --- 使用新的 tile_size ---
         let tile_size_tensor = new ort.Tensor('int64', BigInt64Array.from([BigInt(Math.round(tile_size_to_use))]), []); // 确保是整数
         console.log("[WORKER] create_seam_blending_filter 输入张量准备完成");
-    
+        self.postMessage({ type: 'status', payload: { message: `开始运行模型` } });
         console.log("[WORKER] create_seam_blending_filter 开始运行模型...");
         let out;
         try {
@@ -580,6 +584,7 @@ async function upscaleImage(file, userConfig) {
 
         const cols = sourceWidth > STEP ? Math.ceil((sourceWidth - TILE_PAD * 2) / STEP) : 1;
         const rows = sourceHeight > STEP ? Math.ceil((sourceHeight - TILE_PAD * 2) / STEP) : 1;
+        self.postMessage({ type: 'status', payload: { message: `开始处理 ${cols*rows} 个图块...` } });
         const total_tiles = cols * rows;
         let processed_tiles = 0;
 
@@ -607,7 +612,7 @@ async function upscaleImage(file, userConfig) {
                     }
                 }
                 const model_input_tensor = new ort.Tensor('float32', model_input_data, [1, 3, TILE_SIZE, TILE_SIZE]);
-
+                self.postMessage({ type: 'status', payload: { message: `切块完成` } });
                 // 3. 模型推理
                 const tile_output = await model.run({ [model_config.input_name]: model_input_tensor });
                 const output_tensor = tile_output[model_config.output_name];
@@ -625,7 +630,7 @@ async function upscaleImage(file, userConfig) {
                 // 5. 计算拼接位置
                 const paste_x = (x === 0) ? 0 : (x * STEP - TILE_PAD + TILE_PAD) * scale;
                 const paste_y = (y === 0) ? 0 : (y * STEP - TILE_PAD + TILE_PAD) * scale;
-
+                self.postMessage({ type: 'status', payload: { message: `拼接中` } });
                 self.postMessage({
                     type: 'tile_done',
                     payload: { data: tileImageData.data.buffer, width: tileImageData.width, height: tileImageData.height, dx: paste_x, dy: paste_y }
@@ -639,9 +644,10 @@ async function upscaleImage(file, userConfig) {
     } else {
         // --- Waifu2x 的 SeamBlending 路径 (保持不变) ---
         const tile_size = model_config.calc_tile_size(user_tile_size, model_config);
-        self.postMessage({ type: 'status', payload: { message: `Waifu2x 路径：使用 SeamBlending 策略` } });
+        self.postMessage({ type: 'status', payload: { message: `采用无缝拼接策略...` } });
         const seam_blending = new SeamBlending(x_tensor.dims, model_config.scale, model_config.offset, tile_size);
         await seam_blending.build();
+        self.postMessage({ type: 'status', payload: { message: `图像边缘填充...` } });
         const p = seam_blending.get_rendering_config();
         const x_padded = await padding(x_tensor, BigInt(p.pad[0]), BigInt(p.pad[1]), BigInt(p.pad[2]), BigInt(p.pad[3]), model_config.padding);
         
@@ -659,7 +665,7 @@ async function upscaleImage(file, userConfig) {
             self.postMessage({ type: 'error', payload: { message: '计算出的图块数量为0，请检查图像尺寸或图块设置。' } });
             return;
         }
-
+        self.postMessage({ type: 'status', payload: { message: `开始处理 ${tiles.length} 个图块...` } });
         for (var k = 0; k < tiles.length; ++k) {
             const [i, j, ii, jj, h_i, w_i] = tiles[k];
             let tile_x = crop_tensor(x_padded, j, i, tile_size, tile_size);

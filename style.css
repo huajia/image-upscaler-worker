@@ -414,11 +414,47 @@ button:disabled {
 }
 
 .card-header {
-    padding: 20px;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    flex-wrap: wrap; /* 允许换行 */
+}
+
+.comparison-container {
+    flex: 1;
+    overflow: auto; /* 允许滚动大图 */
+    display: flex; /* 使用 Flexbox 来居中“舞台” */
+    justify-content: center;
+    align-items: center;
+    position: relative; /* 为遮罩层提供定位上下文 */
+    padding: 20px;
+}
+.image-wrapper {
+    position: relative; /* 关键：成为内部所有绝对定位元素的父级 */
+    user-select: none;
+    flex-shrink: 0; /* 防止在flex布局中被压缩 */
+    box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+    background: 
+        linear-gradient(45deg, #222 25%, transparent 25%, transparent 75%, #222 75%),
+        linear-gradient(45deg, #222 25%, #333 25%, #333 75%, #222 75%);
+    background-size: 20px 20px;
+    background-position: 0 0, 10px 10px;
+}
+
+.comparison-item {
+    position: relative; /* 改为 relative，让 img/canvas 在其内部 */
+    width: fit-content; /* 宽度由内容决定 */
+    height: fit-content; /* 高度由内容决定 */
+    margin: auto; /* 实现水平和垂直居中 */
+}
+.comparison-result {
+    width: 50%; 
+}
+#resultBox{position: absolute;overflow: hidden;
+    top: 0px;}
+.image-info-group {
+    display: flex;
+    gap: 10px;
 }
 
 .card-header h2 {
@@ -449,16 +485,41 @@ button:disabled {
 }
 
 #originalImage, #resultCanvas {
-    max-width: 100%;
-    max-height: 100%;
-    display: block;
-    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25);
-    background: 
-        linear-gradient(45deg, #222 25%, transparent 25%, transparent 75%, #222 75%),
-        linear-gradient(45deg, #222 25%, #333 25%, #333 75%, #222 75%);
-    background-size: 20px 20px;
-    background-position: 0 0, 10px 10px;
+    display: block; /* 确保是块级元素 */
+    max-width: none; /* 移除所有最大尺寸限制 */
+    max-height: none;
+    background: none;
+    box-shadow: none;
 }
+.handle-icon {
+    width: 40px;
+    height: 40px;
+    background: var(--primary);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 16px;
+    box-shadow: var(--shadow);
+}
+.comparison-handle {
+    position: absolute;
+    left: 50%; /* 初始位置在中间 */
+    top: 0;
+    bottom: 0;
+    width: 4px; /* 手柄线宽度 */
+    background: rgba(255, 255, 255, 0.7);
+    cursor: ew-resize; /* 东西向拖动光标 */
+    transform: translateX(-50%); /* 精准居中 */
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 40;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+}
+
 
 .preview-overlay {
     position: absolute;
@@ -541,4 +602,69 @@ button:disabled {
     .memory-options {
         grid-template-columns: 1fr;
     }
+}
+.post-process-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+#targetDimensions {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--success);
+    background-color: rgba(6, 214, 160, 0.15);
+}
+
+.preset-buttons {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+}
+
+.preset-btn {
+    padding: 8px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    flex-grow: 1;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    color: rgba(255, 255, 255, 0.8);
+    box-shadow: none;
+    margin-top: 0;
+}
+
+.preset-btn:hover {
+    background: rgba(255, 255, 255, 0.15);
+    border-color: var(--primary);
+    transform: none;
+    box-shadow: none;
+}
+
+.preset-btn.active {
+    background: var(--primary);
+    color: white;
+    border-color: var(--primary);
+}
+
+.form-control-custom {
+    width: 100%;
+    padding: 12px 15px;
+    border-radius: 10px;
+    border: none;
+    background: rgba(0, 0, 0, 0.5);
+    color: white;
+    font-size: 15px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.form-control-custom:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(67, 97, 238, 0.3);
+}
+
+.precise-label {
+    font-size: 14px;
+    color: rgba(255, 255, 255, 0.7);
 }
